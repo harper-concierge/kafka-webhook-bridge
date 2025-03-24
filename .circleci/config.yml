@@ -110,6 +110,7 @@ workflows:
             - build-and-push-webhook-service
           checkout: true
           attach-workspace: false
+          workspace-root: ..
           env-var-file: *env-var-file
           deploy-tag: *deploy-tag
           stage: production
