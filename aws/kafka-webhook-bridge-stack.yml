@@ -241,7 +241,7 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref WebhookLoadBalancer
       Port: 29092
-      Protocol: HTTPS
+      Protocol: TLS
       Certificates:
         - CertificateArn: !Ref WebhookCertificate
       DefaultActions:
@@ -273,14 +273,13 @@ Resources:
     Properties:
       Name: !Sub ${Stage}-kafka-tg
       Port: 29092
-      Protocol: HTTPS
+      Protocol: TCP
       TargetType: ip
       VpcId: !Ref VPC
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /health
+      HealthCheckProtocol: TCP
       HealthCheckPort: traffic-port
-      HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
@@ -359,7 +358,7 @@ Resources:
               - s3:GetObject
               - s3:PutObject
               - s3:DeleteObject
-            Resource: !Sub 'arn:aws:s3:::${AWS::Region}.ecr.dkr/*'
+            Resource: '*'
       RouteTableIds:
         - !Ref PrivateRouteTable1
         - !Ref PrivateRouteTable2
@@ -377,11 +376,35 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          SourceSecurityGroupId: !Ref WebhookSecurityGroup
+          CidrIp: 10.100.3.0/24  # PrivateSubnet1 CIDR
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          SourceSecurityGroupId: !Ref KafkaSecurityGroup
+          CidrIp: 10.100.4.0/24  # PrivateSubnet2 CIDR
+
+  # VPC Endpoints for CloudWatch Logs
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - logs:PutLogEvents
+              - logs:CreateLogStream
+              - logs:CreateLogGroup
+            Resource: '*'
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
 
   # ECS Cluster
   ECSCluster:
@@ -435,6 +458,12 @@ Resources:
                   - ecr:GetDownloadUrlForLayer
                   - ecr:BatchGetImage
                 Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cp-zookeeper'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/kafka-webhook-bridge'
       Path: /
 
   # Security Groups
@@ -449,9 +478,7 @@ Resources:
           ToPort: 9092
           SourceSecurityGroupId: !Ref WebhookSecurityGroup
       SecurityGroupEgress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
   WebhookSecurityGroup:
@@ -465,9 +492,7 @@ Resources:
           ToPort: 3000
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
   # Add EFS resources after the security groups
@@ -585,23 +610,13 @@ Resources:
             - Name: KAFKA_ZOOKEEPER_CONNECT
               Value: 'localhost:2181'
             - Name: KAFKA_LISTENERS
-              Value: 'PLAINTEXT://:9092,SSL://:29092'
+              Value: 'PLAINTEXT://:9092,EXTERNAL://:29092'
             - Name: KAFKA_ADVERTISED_LISTENERS
-              Value: !Sub 'PLAINTEXT://${AWS::StackName}-kafka.${Stage}.internal:9092,SSL://${DomainName}:29092'
+              Value: !Sub 'PLAINTEXT://${AWS::StackName}-kafka.${Stage}.internal:9092,EXTERNAL://${DomainName}:29092'
             - Name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              Value: 'PLAINTEXT:PLAINTEXT,SSL:SSL'
+              Value: 'PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
             - Name: KAFKA_INTER_BROKER_LISTENER_NAME
               Value: 'PLAINTEXT'
-            - Name: KAFKA_SSL_KEYSTORE_LOCATION
-              Value: '/etc/kafka/keystore.jks'
-            - Name: KAFKA_SSL_KEYSTORE_PASSWORD
-              Value: !Ref KafkaPassword
-            - Name: KAFKA_SSL_KEY_PASSWORD
-              Value: !Ref KafkaPassword
-            - Name: KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
-              Value: ''
-            - Name: KAFKA_SSL_CLIENT_AUTH
-              Value: 'none'
             - Name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
               Value: 'true'
             - Name: KAFKA_DELETE_TOPIC_ENABLE
@@ -697,6 +712,7 @@ Resources:
       Memory: '1024'
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      Volumes: []  # Explicitly set empty volumes to ensure no EFS mounts
       ContainerDefinitions:
         - Name: webhook
           Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/kafka-webhook-bridge:${WebhookImageTag}
@@ -713,24 +729,12 @@ Resources:
               Value: !Ref WebhookPassword
             - Name: NODE_ENV
               Value: !Ref Stage
-          MountPoints:
-            - SourceVolume: kafka-config
-              ContainerPath: /etc/kafka
-              ReadOnly: true
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: webhook
-      Volumes:
-        - Name: kafka-config
-          EFSVolumeConfiguration:
-            FilesystemId: !Ref KafkaFileSystem
-            TransitEncryption: ENABLED
-            AuthorizationConfig:
-              AccessPointId: !Ref KafkaAccessPoint
-              IAM: ENABLED
 
   # CloudWatch Log Group
   LogGroup:
