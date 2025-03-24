@@ -1,0 +1,192 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+---
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, commit-msg]
+repos:
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: "v3.0.0-alpha.9-for-vscode"  # Use the sha or tag you want to point at
+    hooks:
+      - id: prettier
+        files: \.(css|less|scss|html|ts|tsx|graphql|gql|js|jsx|md)$
+        exclude: |
+          (?x)(
+            package.json$|
+            .removed/.*$|
+            .stoplight.*\.json$|
+            .markdownlint.*\.json$|
+            .vscode/.*$|
+            src/updateFederatedSchemas\.ts$|
+            \@infrastructure/.*$
+          )
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$|
+            geofences/.*\.json$
+          )
+      # - id: check-docstring-first
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-symlinks
+      - id: check-json
+        exclude: |
+          (?x)(
+            .jshintrc$|
+            .eslintrc.json$|
+            tslint.json$|
+            lerna.json$|
+            tsconfig.json$|
+            tsconfig.*\.json$|
+            .vscode/.*$|
+            /fixtures/.*\.json$|
+            .removed/.*$|
+            test/api/payloads/.*.json$|
+            \@infrastructure/.*$
+          )
+      - id: pretty-format-json
+        args: [--autofix, --indent, "2", --no-ensure-ascii, --no-sort-keys]
+        exclude: |
+          (?x)(
+            .jshintrc$|
+            .eslintrc.json$|
+            tslint.json$|
+            lerna.json$|
+            tsconfig\.json$|
+            tsconfig.*\.json$|
+            .vscode/.*$|
+            /fixtures/.*\.json$|
+            test/api/payloads/.*.json$|
+            .removed/.*$|
+            \@infrastructure/.*$|
+            \.nyrc\.json$|
+            \.mocharc\.json$
+          )
+      - id: check-vcs-permalinks
+      # - id: check-xml
+      - id: debug-statements
+      - id: detect-private-key
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+      - id: trailing-whitespace
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+      - id: end-of-file-fixer
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+      - id: fix-byte-order-marker
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+      - id: mixed-line-ending  # force UNIX file endings for consistency
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+        args: [--fix=lf]
+      - id: check-executables-have-shebangs
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+      # - id: requirements-txt-fixer
+      #   args: [requirements.txt]
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.31.0
+    hooks:
+      - id: yamllint
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            api-spec.yaml$|
+            \@infrastructure/.*$
+          )
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (python)
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
+    hooks:
+      - id: black
+        language_version: python3  # Should be a command that runs python3.6+
+        exclude: .+\/migrations.*\.py$
+        args: [-t, py37, -l, "119"]
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        exclude: .+\/migrations.*\.py$
+
+  - repo: https://github.com/martyzz1/pre-commit-hooks
+    rev: v2.0.1
+    hooks:
+      - id: prepend-branch-name
+        stages: [commit-msg]
+      - id: redocly-openapi-cli
+        files: openapi/openapi.yaml
+        args: ["lint"]
+      - id: circleci-config-validate
+        args: ["--org-slug", "github/harper-concierge", "--org-id", "0eeec469-cd06-4f29-9e29-46a9e1eefc8b"]
+      - id: replace-string-in-json-file
+        files: package-lock\.json$
+        args: ["http://verdaccio:4873", "https://registry.npmjs.org"]
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.33.0
+    hooks:
+      - id: markdownlint-fix
+  - repo: https://codeberg.org/frnmst/md-toc
+    rev: '8.1.8'  # or a specific git tag from md-toc
+    hooks:
+      - id: md-toc
+        args: [-p, '-s1', 'github', '-l4', '-c']  # CLI options
+  - repo: https://github.com/trussworks/pre-commit-hooks
+    rev: v1.1.1
+    hooks:
+      - id: mdspell
+        name: Spell checking md files. Add exception words to .spelling
+      - id: spelling-sort
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-markup
+    rev: v1.0.1
+    hooks:
+      - id: rst-linter
+        args: [--allow-raw]
+        exclude: |
+          (?x)(
+            .removed/.*$|
+            \@infrastructure/.*$
+          )
+  - repo: https://github.com/aws-cloudformation/cfn-lint
+    rev: v0.77.3 # The version of cfn-lint to use
+    hooks:
+      - id: cfn-lint-rc
+        exclude: |
+          (?x)(
+            schemas/.*.json$
+          )
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.1-beta
+    hooks:
+      - id: hadolint

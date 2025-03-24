@@ -1,0 +1,125 @@
+version: 2.1
+
+##############################################################################################################
+# Edit these at your leisure
+# ##########################
+repo: &repo "kafka-api-bridge"
+########## staging ##########
+slack-staging-status-channel: &slack-staging-status-channel "C050TTMBCKT"
+###### production ###########
+slack-production-status-channel: &slack-production-status-channel "C0500P9SQ3H"
+#################################################
+orb-aws-ecr-extra-version: &orb-aws-ecr-extra-version martyzz1/aws-ecr-extra@8.2.7
+orb-aws-ecs-version: &orb-aws-ecs-version circleci/aws-ecs@2.2
+orb-aws-cli-version: &orb-aws-cli-version circleci/aws-cli@3.1
+orb-circleci-orb-version: &orb-circleci-orb-version harper/circleci-orb@2.2.16
+post-process-custom-image: &post-process-custom-image "http://assets.harperconcierge.com/deployment_logos/deployment_logo_api.png"
+giphy-success-keyword: &giphy-success-keyword "party"
+giphy-failure-keyword: &giphy-failure-keyword "broken"
+env-var-file: &env-var-file custom-env-vars
+workspace-root: &workspace-root /tmp/workspace
+full-image-tag: &full-image-tag "${CIRCLE_BUILD_NUM}"
+push-tags: &push-tags "${FULL_IMAGE_TAG},${GIT_TAG},${BRANCH_NAME_TAG}"
+deploy-tag: &deploy-tag "${BUILD_TAG_SHA1}"
+build-tags: &build-tags "${FULL_IMAGE_TAG},${GIT_TAG},${BRANCH_NAME_TAG},latest"
+attach-workspace: &attach-workspace true
+workspace-image-file: &workspace-image-file /tmp/workspace/image.tar
+setup-remote-docker: &setup-remote-docker true
+create-repo: &create-repo true
+remote-docker-layer-caching: &remote-docker-layer-caching true
+
+##############################################################################################################
+# Best not to edit below the line unless you really know what you are doing
+##############################################################################################################
+
+orbs:
+  aws-ecr-extra: *orb-aws-ecr-extra-version
+  aws-ecs: *orb-aws-ecs-version
+  aws-cli: *orb-aws-cli-version
+  circleci-orb: *orb-circleci-orb-version
+
+workflows:
+  version: 2
+  build-and-update:
+    jobs:
+      - aws-ecr-extra/setup-env-vars:
+          filters:
+            branches:
+              only: /.*/
+            tags:
+              only: /.*/
+          env-var-file: *env-var-file
+          full-image-tag: *full-image-tag
+          repo: *repo
+          persist-to-workspace: true
+
+      - circleci-orb/slack-monitor:
+          name: circleci-orb/slack-monitor-production
+          requires:
+            - aws-ecr-extra/setup-env-vars
+          filters:
+            tags:
+              only: /^(?!.*-staging.*)v.*/
+            branches:
+              ignore: /^.*/
+          giphy-failure-keyword: *giphy-failure-keyword
+          giphy-success-keyword: *giphy-success-keyword
+          context: Build Credentials
+          stage: Production
+          post-process-channel: *slack-production-status-channel
+          post-process-custom-image: *post-process-custom-image
+          env-var-file: *env-var-file
+          workspace-root: *workspace-root
+      # Add build and push steps for webhook service
+      - aws-ecr-extra/build-and-push-image:
+          name: build-and-push-webhook-service
+          requires:
+            - aws-ecr-extra/setup-env-vars
+          filters:
+            branches:
+              only: /.*/
+            tags:
+              only: /.*/
+          context: Build Credentials
+          attach-workspace: *attach-workspace
+          workspace-root: *workspace-root
+          repo: *repo
+          path: .
+          build-tags: *build-tags
+          push-tags: *push-tags
+          setup-remote-docker: *setup-remote-docker
+          create-repo: *create-repo
+          remote-docker-layer-caching: *remote-docker-layer-caching
+          extra-build-args: "--target webhook-service"
+
+      - circleci-orb/update-stack:
+          name: circleci-orb/update-stack-production
+          filters:
+            tags:
+              only: /^(?!.*-staging.*)v.*/
+            branches:
+              ignore: /^.*/
+          context:
+            - Build Credentials
+            - production Context
+          requires:
+            - build-and-push-webhook-service
+          workspace-root: *workspace-root
+          env-var-file: *env-var-file
+          deploy-tag: *deploy-tag
+          stage: production
+      - circleci-orb/wait-for-stack:
+          name: circleci-orb/wait-for-stack-production
+          filters:
+            tags:
+              only: /^(?!.*-staging.*)v.*/
+            branches:
+              ignore: /^.*/
+          context:
+            - Build Credentials
+            - production Context
+          requires:
+            - circleci-orb/update-stack-production
+          stage: production
+          stack: kafka-api-bridge-stack
+          region: "eu-west-2"

@@ -1,0 +1,59 @@
+# Format - lines begining # are comments
+# global dictionary is at the start, file overrides afterwards
+# markdown-spellcheck spelling configuration file
+# one word per line, to define a file override use ' - filename'
+# where filename is relative to this configuration file
+14.x
+1Password
+20.x
+APIs
+AWS
+Centra
+CircleCI
+CloudWatch
+DTC
+Dockerfile
+Getavailability
+GraphQL
+IAM
+JWT
+KMS
+MSK
+Mlab
+MongoDB
+Node.js
+Prometheus
+SASL
+SCRAM
+Shopify
+TLS
+Webhook
+Webhooks
+Webpack
+api
+boolean
+cluster0-biconnector
+cluster0-biconnector.fiqjo.mongodb.net
+concierge_completed_cs_notification.mjml
+concierge_completed_new_appointment.mjml
+concierge_completed_ship_direct.mjml
+config
+donniebachan
+enable-cleartext-plugin
+enum
+env
+fargate
+fiqjo.mongodb.net
+frontend
+harper-api
+harper_status
+mjml
+my.cnf
+mysql
+npm
+ssl-mode
+subnet
+tbc
+webhook
+webhooks
+zookeeper

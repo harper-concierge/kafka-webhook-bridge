@@ -1,0 +1,97 @@
+version: '3'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    platform: linux/arm64
+    ports:
+      - "9181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: localhost:2888:3888
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    platform: linux/arm64
+    ports:
+      - "9092:9092"
+      - "9292:29092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9292
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ./kafka/config:/etc/kafka
+      - ./kafka/config/tools-log4j.properties:/usr/bin/../config/tools-log4j.properties
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.3.0
+    platform: linux/arm64
+    ports:
+      - "9081:8081"
+    depends_on:
+      - kafka
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:7.3.0
+    platform: linux/arm64
+    ports:
+      - "9082:8082"
+    depends_on:
+      - schema-registry
+    environment:
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_REST_HOST_NAME: rest-proxy
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+      KAFKA_REST_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+  webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_USERNAME: ${KAFKA_USERNAME:-kafka}
+      KAFKA_PASSWORD: ${KAFKA_PASSWORD:-kafka}
+      KAFKA_CLIENT_ID: kafka-webhook-bridge
+      KAFKA_SSL: "false"
+      PORT: 3000
+      WEBHOOK_USERNAME: ${WEBHOOK_USERNAME:-webhook}
+      WEBHOOK_PASSWORD: ${WEBHOOK_PASSWORD:-webhook}
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+volumes:
+  zookeeper_data:
+  kafka_data:
