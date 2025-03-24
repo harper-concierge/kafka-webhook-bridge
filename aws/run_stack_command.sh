@@ -54,8 +54,6 @@ allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${HOSTED_ZONE_ID}'")
 DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
 FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
 
-echo "Using domain: ${FULL_DOMAIN}"
-
 # Add domain name parameter
 allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
 
@@ -75,8 +73,10 @@ if [ "$command" = "update-stack" ]; then
     else
         echo "Using provided image tag: $IMAGE_TAG"
     fi
-    allParameters+=("ParameterKey=WebhookImageTag,ParameterValue='${IMAGE_TAG}'")
 fi
+allParameters+=("ParameterKey=WebhookImageTag,ParameterValue='${IMAGE_TAG}'")
+
+echo "Using domain: ${FULL_DOMAIN} ${IMAGE_TAG}"
 
 # Handle change set creation
 if [ "$command" = "create-change-set" ]; then
