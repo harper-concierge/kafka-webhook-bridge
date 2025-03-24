@@ -12,7 +12,7 @@ slack-production-status-channel: &slack-production-status-channel "C0500P9SQ3H"
 orb-aws-ecr-extra-version: &orb-aws-ecr-extra-version martyzz1/aws-ecr-extra@8.2.7
 orb-aws-ecs-version: &orb-aws-ecs-version circleci/aws-ecs@2.2
 orb-aws-cli-version: &orb-aws-cli-version circleci/aws-cli@3.1
-orb-circleci-orb-version: &orb-circleci-orb-version harper/circleci-orb@2.2.16
+orb-circleci-orb-version: &orb-circleci-orb-version harper/circleci-orb@2.2.19
 post-process-custom-image: &post-process-custom-image "http://assets.harperconcierge.com/deployment_logos/deployment_logo_api.png"
 giphy-success-keyword: &giphy-success-keyword "party"
 giphy-failure-keyword: &giphy-failure-keyword "broken"
@@ -109,6 +109,7 @@ workflows:
           requires:
             - build-and-push-webhook-service
           workspace-root: *workspace-root
+          attach-workspace: *attach-workspace
           env-var-file: *env-var-file
           deploy-tag: *deploy-tag
           stage: production
