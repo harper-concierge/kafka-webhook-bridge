@@ -33,8 +33,14 @@ while IFS= read -r row; do
         "HOSTED_ZONE_ID")
             echo "export HOSTED_ZONE_ID='${value}'"
             ;;
+        "KAFKA_CONTAINER_IMAGE")
+            echo "export KAFKA_CONTAINER_IMAGE='${value}'"
+            ;;
+        "ZOOKEEPER_CONTAINER_IMAGE")
+            echo "export ZOOKEEPER_CONTAINER_IMAGE='${value}'"
+            ;;
         *)
             printf "# skipping unused field %s\n" "$key"
             ;;
     esac
-done < <(echo "${fields}" | jq -r '.fields[] | @base64') 
+done < <(echo "${fields}" | jq -r '.fields[] | @base64')

@@ -42,6 +42,17 @@ Parameters:
     Description: Password for webhook HTTP Basic Authentication
     NoEcho: true
 
+  # Container image overrides
+  KafkaImage:
+    Type: String
+    Description: Kafka container image (default confluentinc/cp-kafka:7.3.0)
+    Default: confluentinc/cp-kafka:7.3.0
+
+  ZookeeperImage:
+    Type: String
+    Description: Zookeeper container image (default confluentinc/cp-zookeeper:7.3.0)
+    Default: confluentinc/cp-zookeeper:7.3.0
+
 Conditions:
   IsProduction: !Equals [!Ref Stage, 'production']
 
@@ -50,7 +61,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: 10.100.0.0/16
       EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
@@ -66,6 +77,7 @@ Resources:
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn: VPC
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
@@ -75,7 +87,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: 10.100.1.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
@@ -86,7 +98,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: 10.100.2.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
@@ -98,7 +110,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
+      CidrBlock: 10.100.3.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
@@ -108,23 +120,11 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.4.0/24
+      CidrBlock: 10.100.4.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-private-2
-
-  # NAT Gateway for private subnets
-  NatGatewayEIP1:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-
-  NatGateway1:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatGatewayEIP1.AllocationId
-      SubnetId: !Ref PublicSubnet1
 
   # Route Tables
   PublicRouteTable:
@@ -143,22 +143,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub ${AWS::StackName}-private-rt
-
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway1
-
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -171,17 +155,34 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
+  # Private Route Tables (no internet access needed)
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-1
+
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-2
 
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable2
 
   # SSL Certificate
   WebhookCertificate:
@@ -240,7 +241,7 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref WebhookLoadBalancer
       Port: 29092
-      Protocol: TLS
+      Protocol: HTTPS
       Certificates:
         - CertificateArn: !Ref WebhookCertificate
       DefaultActions:
@@ -250,7 +251,7 @@ Resources:
   WebhookTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${AWS::StackName}-tg
+      Name: !Sub ${Stage}-webhook-tg
       Port: 3000
       Protocol: HTTP
       TargetType: ip
@@ -266,27 +267,121 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
-        - Key: stickiness.enabled
-          Value: 'false'
 
   KafkaTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${AWS::StackName}-kafka-tg
+      Name: !Sub ${Stage}-kafka-tg
       Port: 29092
-      Protocol: TLS
+      Protocol: HTTPS
       TargetType: ip
       VpcId: !Ref VPC
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPort: 9092
-      HealthCheckProtocol: TCP
+      HealthCheckPath: /health
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
+
+  # VPC Endpoints for ECR
+  ECRDockerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Resource: '*'
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetAuthorizationToken
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:DescribeImages
+              - ecr:BatchGetImage
+              - ecr:GetLifecyclePolicy
+              - ecr:GetLifecyclePolicyPreview
+              - ecr:ListTagsForResource
+              - ecr:DescribeImageScanFindings
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:PutImage
+            Resource: '*'
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+
+  # S3 Endpoint for ECR
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub 'arn:aws:s3:::${AWS::Region}.ecr.dkr/*'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref VPC
+      VpcEndpointType: Gateway
+
+  # Security Groups for VPC Endpoints
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref WebhookSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref KafkaSecurityGroup
 
   # ECS Cluster
   ECSCluster:
@@ -312,6 +407,35 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cp-kafka'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cp-zookeeper'
+      Path: /
 
   # Security Groups
   KafkaSecurityGroup:
@@ -324,6 +448,11 @@ Resources:
           FromPort: 9092
           ToPort: 9092
           SourceSecurityGroupId: !Ref WebhookSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
 
   WebhookSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -335,6 +464,11 @@ Resources:
           FromPort: 3000
           ToPort: 3000
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
 
   # Add EFS resources after the security groups
   EFSSecurityGroup:
@@ -431,30 +565,19 @@ Resources:
             AuthorizationConfig:
               AccessPointId: !Ref ZookeeperAccessPoint
               IAM: ENABLED
-        - Name: entrypoint-script
-          DockerVolume:
-            Scope: task
-            Autoprovision: true
-            Driver: local
-            DriverOpts:
-              type: tmpfs
-              device: tmpfs
-              o: size=1m,uid=1000
       ContainerDefinitions:
         - Name: kafka
-          Image: confluentinc/cp-kafka:7.3.0
+          Image: !Ref KafkaImage
           Essential: true
-          EntryPoint:
-            - "/kafka-entrypoint.sh"
+          User: "root"
           MountPoints:
             - SourceVolume: kafka-data
               ContainerPath: /var/lib/kafka/data
               ReadOnly: false
-            - SourceVolume: entrypoint-script
-              ContainerPath: /kafka-entrypoint.sh
-              ReadOnly: true
           PortMappings:
             - ContainerPort: 9092
+              Protocol: tcp
+            - ContainerPort: 29092
               Protocol: tcp
           Environment:
             - Name: KAFKA_BROKER_ID
@@ -487,19 +610,14 @@ Resources:
               Value: '6'
             - Name: KAFKA_DEFAULT_REPLICATION_FACTOR
               Value: '1'
-            - Name: KAFKA_SASL_ENABLED_MECHANISMS
-              Value: 'SCRAM-SHA-512'
-            - Name: KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL
-              Value: 'SCRAM-SHA-512'
-            - Name: KAFKA_SECURITY_INTER_BROKER_PROTOCOL
-              Value: 'PLAINTEXT'
-            - Name: KAFKA_OPTS
-              Value: !Sub '-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf'
-            - Name: KAFKA_SUPER_USERS
-              Value: !Sub 'User:${KafkaUsername}'
-          MountPoints:
-            - SourceVolume: kafka-data
-              ContainerPath: /var/lib/kafka/data
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - nc -z localhost 9092 || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -507,8 +625,9 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: kafka
         - Name: zookeeper
-          Image: confluentinc/cp-zookeeper:7.3.0
+          Image: !Ref ZookeeperImage
           Essential: true
+          User: "root"
           MountPoints:
             - SourceVolume: zookeeper-data
               ContainerPath: /var/lib/zookeeper/data
@@ -520,6 +639,22 @@ Resources:
               Value: '2000'
             - Name: ZOOKEEPER_DATA_DIR
               Value: '/var/lib/zookeeper/data'
+            - Name: ZOOKEEPER_INIT_LIMIT
+              Value: '5'
+            - Name: ZOOKEEPER_SYNC_LIMIT
+              Value: '2'
+            - Name: ZOOKEEPER_SERVER_ID
+              Value: '1'
+            - Name: ZOOKEEPER_SERVERS
+              Value: '0.0.0.0:2888:3888'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - echo ruok | nc localhost 2181 || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -561,6 +696,7 @@ Resources:
       Cpu: '512'
       Memory: '1024'
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: webhook
           Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/kafka-webhook-bridge:${WebhookImageTag}

@@ -4,15 +4,15 @@ set -e
 
 # Check required arguments
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <command> <subdomain> [image_tag]"
+    echo "Usage: $0 <command> <stage> [image_tag]"
     echo "Example: $0 create-stack webhook-bridge"
     exit 1
 fi
 
 command="$1"
-SUBDOMAIN="$2"
+STAGE="$2"
 IMAGE_TAG="$3"
-STAGE="production"  # Default to production
+SUBDOMAIN="webhook-bridge"
 changeset=""
 
 # Check required environment variables
@@ -50,11 +50,20 @@ allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${HOSTED_ZONE_ID}'")
 
+# Add container image parameters only if they are set
+if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=KafkaImage,ParameterValue='${KAFKA_CONTAINER_IMAGE}'")
+  echo "Overriding Kafka image with ${KAFKA_CONTAINER_IMAGE}"
+fi
+
+if [ -n "${ZOOKEEPER_CONTAINER_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=ZookeeperImage,ParameterValue='${ZOOKEEPER_CONTAINER_IMAGE}'")
+  echo "Overriding Zookper image with ${ZOOKEEPER_CONTAINER_IMAGE}"
+fi
+
 # Get the domain name from the HostedZoneId
 DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
 FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
-
-echo "Using domain: ${FULL_DOMAIN}"
 
 # Add domain name parameter
 allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
@@ -63,9 +72,9 @@ allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
 if [ "$command" = "update-stack" ]; then
     if [ -z "$IMAGE_TAG" ]; then
         # Get current image tag from running task
-        task_arn=$(aws ecs list-tasks --cluster "kafka-api-bridge-cluster" --desired-status RUNNING --family kafka-webhook-bridge --query 'taskArns[0]' --output text)
+        task_arn=$(aws ecs list-tasks --cluster "kafka-webhook-bridge-cluster" --desired-status RUNNING --family kafka-webhook-bridge --query 'taskArns[0]' --output text)
         if [ -n "$task_arn" ]; then
-            task_definition_arn=$(aws ecs describe-tasks --cluster "kafka-api-bridge-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
+            task_definition_arn=$(aws ecs describe-tasks --cluster "kafka-webhook-bridge-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
             IMAGE_TAG=$(aws ecs describe-task-definition --task-definition "$task_definition_arn" --query "taskDefinition.containerDefinitions[0].image" --output text | awk -F ':' '{print $NF}')
             echo "Using current image tag: $IMAGE_TAG"
         else
@@ -75,21 +84,23 @@ if [ "$command" = "update-stack" ]; then
     else
         echo "Using provided image tag: $IMAGE_TAG"
     fi
-    allParameters+=("ParameterKey=WebhookImageTag,ParameterValue='${IMAGE_TAG}'")
 fi
+allParameters+=("ParameterKey=WebhookImageTag,ParameterValue='${IMAGE_TAG}'")
+
+echo "Using domain: ${FULL_DOMAIN} ${IMAGE_TAG}"
 
 # Handle change set creation
 if [ "$command" = "create-change-set" ]; then
     epoch=$(awk 'BEGIN{srand(); print srand()}')
-    echo "Creating ChangeSet: kafka-api-bridge-$epoch"
-    changeset="--change-set-name kafka-api-bridge-$epoch"
+    echo "Creating ChangeSet: kafka-webhook-bridge-$epoch"
+    changeset="--change-set-name kafka-webhook-bridge-$epoch"
 fi
 
 # Deploy the stack
 # shellcheck disable=SC2086
 
 aws cloudformation "$command" \
-    --stack-name "kafka-api-bridge-stack" \
+    --stack-name "kafka-webhook-bridge-stack" \
     --template-body file://kafka-webhook-bridge-stack.yml \
     --parameters \
         "${allParameters[@]}" \
@@ -98,5 +109,5 @@ aws cloudformation "$command" \
     --region eu-west-1 $changeset
 
 #echo "Waiting for stack update to finish..."
-#aws cloudformation wait stack-update-complete --stack-name "kafka-api-bridge-stack"
+#aws cloudformation wait stack-update-complete --stack-name "kafka-webhook-bridge-stack"
 #echo "Stack update finished."
