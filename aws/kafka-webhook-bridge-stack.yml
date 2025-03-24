@@ -251,7 +251,7 @@ Resources:
   WebhookTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${AWS::StackName}-tg
+      Name: !Sub ${Stage}-webhook-tg
       Port: 3000
       Protocol: HTTP
       TargetType: ip
@@ -271,7 +271,7 @@ Resources:
   KafkaTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${AWS::StackName}-kafka-tg
+      Name: !Sub ${Stage}-kafka-tg
       Port: 29092
       Protocol: HTTPS
       TargetType: ip
@@ -288,17 +288,6 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
 
-  # ECS Cluster
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub ${AWS::StackName}-cluster
-      CapacityProviders:
-        - FARGATE
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-
   # VPC Endpoints for ECR
   ECRDockerEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -312,11 +301,15 @@ Resources:
               - ecr:BatchGetImage
               - ecr:GetDownloadUrlForLayer
             Resource: '*'
-      RouteTableIds:
-        - !Ref PrivateRouteTable1
-        - !Ref PrivateRouteTable2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
       VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
 
   ECRApiEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -343,11 +336,15 @@ Resources:
               - ecr:CompleteLayerUpload
               - ecr:PutImage
             Resource: '*'
-      RouteTableIds:
-        - !Ref PrivateRouteTable1
-        - !Ref PrivateRouteTable2
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
       VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
 
   # S3 Endpoint for ECR
   S3Endpoint:
@@ -368,6 +365,34 @@ Resources:
         - !Ref PrivateRouteTable2
       ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
       VpcId: !Ref VPC
+      VpcEndpointType: Gateway
+
+  # Security Groups for VPC Endpoints
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref WebhookSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref KafkaSecurityGroup
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}-cluster
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
 
   # ECS Task Execution Role
   ECSTaskExecutionRole:
@@ -382,6 +407,34 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cp-kafka'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cp-zookeeper'
       Path: /
 
   # Security Groups
@@ -395,6 +448,11 @@ Resources:
           FromPort: 9092
           ToPort: 9092
           SourceSecurityGroupId: !Ref WebhookSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
 
   WebhookSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -406,6 +464,11 @@ Resources:
           FromPort: 3000
           ToPort: 3000
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
 
   # Add EFS resources after the security groups
   EFSSecurityGroup:
@@ -506,6 +569,7 @@ Resources:
         - Name: kafka
           Image: !Ref KafkaImage
           Essential: true
+          User: "root"
           MountPoints:
             - SourceVolume: kafka-data
               ContainerPath: /var/lib/kafka/data
@@ -546,6 +610,14 @@ Resources:
               Value: '6'
             - Name: KAFKA_DEFAULT_REPLICATION_FACTOR
               Value: '1'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - nc -z localhost 9092 || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -555,6 +627,7 @@ Resources:
         - Name: zookeeper
           Image: !Ref ZookeeperImage
           Essential: true
+          User: "root"
           MountPoints:
             - SourceVolume: zookeeper-data
               ContainerPath: /var/lib/zookeeper/data
@@ -566,6 +639,22 @@ Resources:
               Value: '2000'
             - Name: ZOOKEEPER_DATA_DIR
               Value: '/var/lib/zookeeper/data'
+            - Name: ZOOKEEPER_INIT_LIMIT
+              Value: '5'
+            - Name: ZOOKEEPER_SYNC_LIMIT
+              Value: '2'
+            - Name: ZOOKEEPER_SERVER_ID
+              Value: '1'
+            - Name: ZOOKEEPER_SERVERS
+              Value: '0.0.0.0:2888:3888'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - echo ruok | nc localhost 2181 || exit 1
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           LogConfiguration:
             LogDriver: awslogs
             Options:

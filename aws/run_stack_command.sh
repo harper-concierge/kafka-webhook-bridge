@@ -72,9 +72,9 @@ allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
 if [ "$command" = "update-stack" ]; then
     if [ -z "$IMAGE_TAG" ]; then
         # Get current image tag from running task
-        task_arn=$(aws ecs list-tasks --cluster "kafka-api-bridge-cluster" --desired-status RUNNING --family kafka-webhook-bridge --query 'taskArns[0]' --output text)
+        task_arn=$(aws ecs list-tasks --cluster "kafka-webhook-bridge-cluster" --desired-status RUNNING --family kafka-webhook-bridge --query 'taskArns[0]' --output text)
         if [ -n "$task_arn" ]; then
-            task_definition_arn=$(aws ecs describe-tasks --cluster "kafka-api-bridge-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
+            task_definition_arn=$(aws ecs describe-tasks --cluster "kafka-webhook-bridge-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
             IMAGE_TAG=$(aws ecs describe-task-definition --task-definition "$task_definition_arn" --query "taskDefinition.containerDefinitions[0].image" --output text | awk -F ':' '{print $NF}')
             echo "Using current image tag: $IMAGE_TAG"
         else
@@ -92,15 +92,15 @@ echo "Using domain: ${FULL_DOMAIN} ${IMAGE_TAG}"
 # Handle change set creation
 if [ "$command" = "create-change-set" ]; then
     epoch=$(awk 'BEGIN{srand(); print srand()}')
-    echo "Creating ChangeSet: kafka-api-bridge-$epoch"
-    changeset="--change-set-name kafka-api-bridge-$epoch"
+    echo "Creating ChangeSet: kafka-webhook-bridge-$epoch"
+    changeset="--change-set-name kafka-webhook-bridge-$epoch"
 fi
 
 # Deploy the stack
 # shellcheck disable=SC2086
 
 aws cloudformation "$command" \
-    --stack-name "kafka-api-bridge-stack" \
+    --stack-name "kafka-webhook-bridge-stack" \
     --template-body file://kafka-webhook-bridge-stack.yml \
     --parameters \
         "${allParameters[@]}" \
@@ -109,5 +109,5 @@ aws cloudformation "$command" \
     --region eu-west-1 $changeset
 
 #echo "Waiting for stack update to finish..."
-#aws cloudformation wait stack-update-complete --stack-name "kafka-api-bridge-stack"
+#aws cloudformation wait stack-update-complete --stack-name "kafka-webhook-bridge-stack"
 #echo "Stack update finished."
