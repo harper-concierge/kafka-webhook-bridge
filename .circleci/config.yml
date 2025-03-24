@@ -3,7 +3,7 @@ version: 2.1
 ##############################################################################################################
 # Edit these at your leisure
 # ##########################
-repo: &repo "kafka-api-bridge"
+repo: &repo "kafka-webhook-bridge"
 ########## staging ##########
 slack-staging-status-channel: &slack-staging-status-channel "C050TTMBCKT"
 ###### production ###########
