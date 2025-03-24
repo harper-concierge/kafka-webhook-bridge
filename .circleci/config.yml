@@ -109,7 +109,7 @@ workflows:
           requires:
             - build-and-push-webhook-service
           workspace-root: *workspace-root
-          attach-workspace: *attach-workspace
+          attach-workspace: false
           env-var-file: *env-var-file
           deploy-tag: *deploy-tag
           stage: production
