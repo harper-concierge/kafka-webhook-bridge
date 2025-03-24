@@ -24,7 +24,6 @@ deploy-tag: &deploy-tag "${BUILD_TAG_SHA1}"
 build-tags: &build-tags "${FULL_IMAGE_TAG},${GIT_TAG},${BRANCH_NAME_TAG},latest"
 attach-workspace: &attach-workspace true
 workspace-image-file: &workspace-image-file /tmp/workspace/image.tar
-setup-remote-docker: &setup-remote-docker true
 create-repo: &create-repo true
 remote-docker-layer-caching: &remote-docker-layer-caching true
 
@@ -94,7 +93,6 @@ workflows:
           env-var-file: *env-var-file
           tag: *push-tags
           region: "eu-west-1"
-          setup-remote-docker: *setup-remote-docker
           create-repo: *create-repo
           remote-docker-layer-caching: *remote-docker-layer-caching
 
