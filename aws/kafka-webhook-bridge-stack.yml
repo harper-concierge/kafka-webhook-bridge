@@ -45,12 +45,12 @@ Parameters:
   # Container image overrides
   KafkaImage:
     Type: String
-    Description: Kafka container image (default: confluentinc/cp-kafka:7.3.0)
+    Description: Kafka container image (default confluentinc/cp-kafka:7.3.0)
     Default: confluentinc/cp-kafka:7.3.0
 
   ZookeeperImage:
     Type: String
-    Description: Zookeeper container image (default: confluentinc/cp-zookeeper:7.3.0)
+    Description: Zookeeper container image (default confluentinc/cp-zookeeper:7.3.0)
     Default: confluentinc/cp-zookeeper:7.3.0
 
 Conditions:
@@ -267,8 +267,6 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '30'
-        - Key: stickiness.enabled
-          Value: 'false'
 
   KafkaTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -280,8 +278,9 @@ Resources:
       VpcId: !Ref VPC
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPort: 9092
-      HealthCheckProtocol: TCP
+      HealthCheckPath: /health
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
@@ -300,6 +299,76 @@ Resources:
         - CapacityProvider: FARGATE
           Weight: 1
 
+  # VPC Endpoints for ECR
+  ECRDockerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Resource: '*'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcId: !Ref VPC
+
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetAuthorizationToken
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:DescribeImages
+              - ecr:BatchGetImage
+              - ecr:GetLifecyclePolicy
+              - ecr:GetLifecyclePolicyPreview
+              - ecr:ListTagsForResource
+              - ecr:DescribeImageScanFindings
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:PutImage
+            Resource: '*'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcId: !Ref VPC
+
+  # S3 Endpoint for ECR
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub 'arn:aws:s3:::${AWS::Region}.ecr.dkr/*'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref VPC
+
   # ECS Task Execution Role
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
@@ -313,6 +382,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Path: /
 
   # Security Groups
   KafkaSecurityGroup:
@@ -442,6 +512,8 @@ Resources:
               ReadOnly: false
           PortMappings:
             - ContainerPort: 9092
+              Protocol: tcp
+            - ContainerPort: 29092
               Protocol: tcp
           Environment:
             - Name: KAFKA_BROKER_ID

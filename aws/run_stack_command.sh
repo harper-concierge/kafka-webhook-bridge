@@ -51,12 +51,14 @@ allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${HOSTED_ZONE_ID}'")
 
 # Add container image parameters only if they are set
-if [ -n "${KAFKA_IMAGE:-}" ]; then
-  allParameters+=("ParameterKey=KafkaImage,ParameterValue='${KAFKA_IMAGE}'")
+if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=KafkaImage,ParameterValue='${KAFKA_CONTAINER_IMAGE}'")
+  echo "Overriding Kafka image with ${KAFKA_CONTAINER_IMAGE}"
 fi
 
-if [ -n "${ZOOKEEPER_IMAGE:-}" ]; then
-  allParameters+=("ParameterKey=ZookeeperImage,ParameterValue='${ZOOKEEPER_IMAGE}'")
+if [ -n "${ZOOKEEPER_CONTAINER_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=ZookeeperImage,ParameterValue='${ZOOKEEPER_CONTAINER_IMAGE}'")
+  echo "Overriding Zookper image with ${ZOOKEEPER_CONTAINER_IMAGE}"
 fi
 
 # Get the domain name from the HostedZoneId
