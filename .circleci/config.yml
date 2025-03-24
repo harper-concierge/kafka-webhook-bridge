@@ -108,6 +108,7 @@ workflows:
             - production Context
           requires:
             - build-and-push-webhook-service
+          checkout: true
           attach-workspace: false
           env-var-file: *env-var-file
           deploy-tag: *deploy-tag
