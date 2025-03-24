@@ -4,15 +4,15 @@ set -e
 
 # Check required arguments
 if [ $# -lt 2 ]; then
-    echo "Usage: $0 <command> <subdomain> [image_tag]"
+    echo "Usage: $0 <command> <stage> [image_tag]"
     echo "Example: $0 create-stack webhook-bridge"
     exit 1
 fi
 
 command="$1"
-SUBDOMAIN="$2"
+STAGE="$2"
 IMAGE_TAG="$3"
-STAGE="production"  # Default to production
+SUBDOMAIN="webhook-bridge"
 changeset=""
 
 # Check required environment variables
