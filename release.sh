@@ -19,8 +19,6 @@ BRANCH_NAME=${CURRENT_BRANCH#feature/}
 # Sanitize the branch name
 BRANCH_NAME=$(sanitize "$BRANCH_NAME")
 
-# Wait for user input, and store it in a variable
-# user_input=$(cat)
 patch='patch'
 
 if [ "$1" ]; then
@@ -37,14 +35,7 @@ if [ "$1" ]; then
     fi
 fi
 
-# Ask the user for input
-printf "Please Specify a release Message which will be shared on Slack,  press Ctrl-D on a blank line when you're done:\n\n"
-user_input=$(</dev/stdin)
-
-#remove any weird control chars that might have ended up in the string
-user_input=$(echo "$user_input" | tr -d '\001-\011\013\014\016-\037')
-
-commit_message=$":bookmark: [ci skip] %s\n\n$user_input"
+commit_message=$":bookmark: [ci skip] %s"
 # Check if the current branch begins with "feature/"
 if [[ $CURRENT_BRANCH == feature/* ]]; then
     if [ "v$CURRENT_VERSION" == "$1" ]; then
