@@ -50,7 +50,7 @@ Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: 10.100.0.0/16
       EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
@@ -66,6 +66,7 @@ Resources:
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn: VPC
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
@@ -75,7 +76,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: 10.100.1.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
@@ -86,7 +87,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: 10.100.2.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
@@ -98,7 +99,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
+      CidrBlock: 10.100.3.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
@@ -108,23 +109,11 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.4.0/24
+      CidrBlock: 10.100.4.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-private-2
-
-  # NAT Gateway for private subnets
-  NatGatewayEIP1:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-
-  NatGateway1:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatGatewayEIP1.AllocationId
-      SubnetId: !Ref PublicSubnet1
 
   # Route Tables
   PublicRouteTable:
@@ -143,22 +132,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub ${AWS::StackName}-private-rt
-
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway1
-
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -171,17 +144,34 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
+  # Private Route Tables (no internet access needed)
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-1
+
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt-2
 
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable2
 
   # SSL Certificate
   WebhookCertificate:
@@ -431,28 +421,14 @@ Resources:
             AuthorizationConfig:
               AccessPointId: !Ref ZookeeperAccessPoint
               IAM: ENABLED
-        - Name: entrypoint-script
-          DockerVolume:
-            Scope: task
-            Autoprovision: true
-            Driver: local
-            DriverOpts:
-              type: tmpfs
-              device: tmpfs
-              o: size=1m,uid=1000
       ContainerDefinitions:
         - Name: kafka
           Image: confluentinc/cp-kafka:7.3.0
           Essential: true
-          EntryPoint:
-            - "/kafka-entrypoint.sh"
           MountPoints:
             - SourceVolume: kafka-data
               ContainerPath: /var/lib/kafka/data
               ReadOnly: false
-            - SourceVolume: entrypoint-script
-              ContainerPath: /kafka-entrypoint.sh
-              ReadOnly: true
           PortMappings:
             - ContainerPort: 9092
               Protocol: tcp
@@ -487,19 +463,6 @@ Resources:
               Value: '6'
             - Name: KAFKA_DEFAULT_REPLICATION_FACTOR
               Value: '1'
-            - Name: KAFKA_SASL_ENABLED_MECHANISMS
-              Value: 'SCRAM-SHA-512'
-            - Name: KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL
-              Value: 'SCRAM-SHA-512'
-            - Name: KAFKA_SECURITY_INTER_BROKER_PROTOCOL
-              Value: 'PLAINTEXT'
-            - Name: KAFKA_OPTS
-              Value: !Sub '-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf'
-            - Name: KAFKA_SUPER_USERS
-              Value: !Sub 'User:${KafkaUsername}'
-          MountPoints:
-            - SourceVolume: kafka-data
-              ContainerPath: /var/lib/kafka/data
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -561,6 +524,7 @@ Resources:
       Cpu: '512'
       Memory: '1024'
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: webhook
           Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/kafka-webhook-bridge:${WebhookImageTag}
