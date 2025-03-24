@@ -42,6 +42,17 @@ Parameters:
     Description: Password for webhook HTTP Basic Authentication
     NoEcho: true
 
+  # Container image overrides
+  KafkaImage:
+    Type: String
+    Description: Kafka container image (default: confluentinc/cp-kafka:7.3.0)
+    Default: confluentinc/cp-kafka:7.3.0
+
+  ZookeeperImage:
+    Type: String
+    Description: Zookeeper container image (default: confluentinc/cp-zookeeper:7.3.0)
+    Default: confluentinc/cp-zookeeper:7.3.0
+
 Conditions:
   IsProduction: !Equals [!Ref Stage, 'production']
 
@@ -230,7 +241,7 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref WebhookLoadBalancer
       Port: 29092
-      Protocol: TLS
+      Protocol: HTTPS
       Certificates:
         - CertificateArn: !Ref WebhookCertificate
       DefaultActions:
@@ -264,7 +275,7 @@ Resources:
     Properties:
       Name: !Sub ${AWS::StackName}-kafka-tg
       Port: 29092
-      Protocol: TLS
+      Protocol: HTTPS
       TargetType: ip
       VpcId: !Ref VPC
       HealthCheckEnabled: true
@@ -423,7 +434,7 @@ Resources:
               IAM: ENABLED
       ContainerDefinitions:
         - Name: kafka
-          Image: confluentinc/cp-kafka:7.3.0
+          Image: !Ref KafkaImage
           Essential: true
           MountPoints:
             - SourceVolume: kafka-data
@@ -470,7 +481,7 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: kafka
         - Name: zookeeper
-          Image: confluentinc/cp-zookeeper:7.3.0
+          Image: !Ref ZookeeperImage
           Essential: true
           MountPoints:
             - SourceVolume: zookeeper-data

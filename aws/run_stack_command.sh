@@ -50,6 +50,15 @@ allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${HOSTED_ZONE_ID}'")
 
+# Add container image parameters only if they are set
+if [ -n "${KAFKA_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=KafkaImage,ParameterValue='${KAFKA_IMAGE}'")
+fi
+
+if [ -n "${ZOOKEEPER_IMAGE:-}" ]; then
+  allParameters+=("ParameterKey=ZookeeperImage,ParameterValue='${ZOOKEEPER_IMAGE}'")
+fi
+
 # Get the domain name from the HostedZoneId
 DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
 FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
