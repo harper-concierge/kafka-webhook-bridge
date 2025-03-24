@@ -71,7 +71,7 @@ workflows:
           env-var-file: *env-var-file
           workspace-root: *workspace-root
       # Add build and push steps for webhook service
-      - aws-ecr-extra/build-and-push-image:
+      - aws-ecr-extra/build-and-push-container-to-aws:
           name: build-and-push-webhook-service
           requires:
             - aws-ecr-extra/setup-env-vars
