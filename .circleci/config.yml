@@ -73,24 +73,30 @@ workflows:
       # Add build and push steps for webhook service
       - aws-ecr-extra/build-and-push-container-to-aws:
           name: build-and-push-webhook-service
+          executor:
+              name: aws-ecr-extra/default
+              use-docker-layer-caching: false
           requires:
             - aws-ecr-extra/setup-env-vars
           filters:
-            branches:
-              only: /.*/
             tags:
-              only: /.*/
-          context: Build Credentials
+              only: /^(?!.*-staging.*)v.*/
+            branches:
+              ignore: /^.*/
+          context:
+            - Build Credentials
+            - production Context
+
+          repo: *repo
           attach-workspace: *attach-workspace
           workspace-root: *workspace-root
-          repo: *repo
-          path: .
-          build-tags: *build-tags
-          push-tags: *push-tags
+          image-file: *workspace-image-file
+          env-var-file: *env-var-file
+          tag: *push-tags
+          region: "eu-west-1"
           setup-remote-docker: *setup-remote-docker
           create-repo: *create-repo
           remote-docker-layer-caching: *remote-docker-layer-caching
-          extra-build-args: "--target webhook-service"
 
       - circleci-orb/update-stack:
           name: circleci-orb/update-stack-production
