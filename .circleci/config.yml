@@ -95,38 +95,3 @@ workflows:
           region: "eu-west-1"
           create-repo: *create-repo
           remote-docker-layer-caching: *remote-docker-layer-caching
-
-      - circleci-orb/update-stack:
-          name: circleci-orb/update-stack-production
-          filters:
-            tags:
-              only: /^(?!.*-staging.*)v.*/
-            branches:
-              ignore: /^.*/
-          context:
-            - Build Credentials
-            - production Context
-          requires:
-            - build-and-push-webhook-service
-          checkout: true
-          attach-workspace: false
-          workspace-root: ..
-          project-dir: project
-          env-var-file: *env-var-file
-          deploy-tag: *deploy-tag
-          stage: production
-      - circleci-orb/wait-for-stack:
-          name: circleci-orb/wait-for-stack-production
-          filters:
-            tags:
-              only: /^(?!.*-staging.*)v.*/
-            branches:
-              ignore: /^.*/
-          context:
-            - Build Credentials
-            - production Context
-          requires:
-            - circleci-orb/update-stack-production
-          stage: production
-          stack: kafka-api-bridge-stack
-          region: "eu-west-2"
