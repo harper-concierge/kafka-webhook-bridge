@@ -22,7 +22,7 @@ full-image-tag: &full-image-tag "${CIRCLE_BUILD_NUM}"
 push-tags: &push-tags "${FULL_IMAGE_TAG},${GIT_TAG},${BRANCH_NAME_TAG}"
 deploy-tag: &deploy-tag "${BUILD_TAG_SHA1}"
 build-tags: &build-tags "${FULL_IMAGE_TAG},${GIT_TAG},${BRANCH_NAME_TAG},latest"
-attach-workspace: &attach-workspace false
+attach-workspace: &attach-workspace true
 workspace-image-file: &workspace-image-file /tmp/workspace/image.tar
 create-repo: &create-repo true
 remote-docker-layer-caching: &remote-docker-layer-caching true
@@ -109,6 +109,7 @@ workflows:
           requires:
             - build-and-push-webhook-service
           workspace-root: *workspace-root
+          attach-workspace: *attach-workspace
           env-var-file: *env-var-file
           deploy-tag: *deploy-tag
           stage: production
