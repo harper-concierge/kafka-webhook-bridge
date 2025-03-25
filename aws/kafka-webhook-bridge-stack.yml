@@ -236,10 +236,21 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref WebhookTargetGroup
 
+  # Network Load Balancer for Kafka
+  KafkaLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${Stage}-kafka-nlb
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      
   KafkaListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref WebhookLoadBalancer
+      LoadBalancerArn: !Ref KafkaLoadBalancer
       Port: 29092
       Protocol: TLS
       Certificates:
@@ -280,7 +291,7 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthCheckProtocol: TCP
       HealthCheckPort: traffic-port
-      HealthCheckTimeoutSeconds: 5
+      HealthCheckTimeoutSeconds: 10
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       TargetGroupAttributes:
@@ -477,6 +488,10 @@ Resources:
           FromPort: 9092
           ToPort: 9092
           SourceSecurityGroupId: !Ref WebhookSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 29092
+          ToPort: 29092
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -595,6 +610,15 @@ Resources:
           Image: !Ref KafkaImage
           Essential: true
           User: "root"
+          Command:
+            - "bash"
+            - "-c"
+            - |
+              # Clean up old data and lock files if this is a new deployment
+              rm -rf /var/lib/kafka/data/meta.properties
+              rm -f /var/lib/kafka/data/.lock
+              # Start Kafka with normal parameters
+              exec /etc/confluent/docker/run
           MountPoints:
             - SourceVolume: kafka-data
               ContainerPath: /var/lib/kafka/data
@@ -612,7 +636,7 @@ Resources:
             - Name: KAFKA_LISTENERS
               Value: 'PLAINTEXT://:9092,EXTERNAL://:29092'
             - Name: KAFKA_ADVERTISED_LISTENERS
-              Value: !Sub 'PLAINTEXT://${AWS::StackName}-kafka.${Stage}.internal:9092,EXTERNAL://${DomainName}:29092'
+              Value: !Sub 'PLAINTEXT://${AWS::StackName}-kafka.${Stage}.internal:9092,EXTERNAL://kafka.${DomainName}:29092'
             - Name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               Value: 'PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
             - Name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -729,6 +753,16 @@ Resources:
               Value: !Ref WebhookPassword
             - Name: NODE_ENV
               Value: !Ref Stage
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:3000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LinuxParameters:
+            InitProcessEnabled: true
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -743,10 +777,27 @@ Resources:
       LogGroupName: !Sub /ecs/${AWS::StackName}
       RetentionInDays: 14
 
-  # ECS Services
+  # CloudMap service discovery for internal Kafka access
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub ${Stage}.internal
+      Vpc: !Ref VPC
+
+  KafkaServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: !Sub ${AWS::StackName}-kafka
+      DnsConfig:
+        RoutingPolicy: MULTIVALUE
+        DnsRecords:
+          - TTL: 10
+            Type: A
+      NamespaceId: !Ref ServiceDiscoveryNamespace
+      
   KafkaService:
     Type: AWS::ECS::Service
-    DependsOn: WebhookListener
+    DependsOn: KafkaListener
     Properties:
       ServiceName: !Sub ${AWS::StackName}-kafka
       Cluster: !Ref ECSCluster
@@ -765,10 +816,25 @@ Resources:
         - ContainerName: kafka
           ContainerPort: 29092
           TargetGroupArn: !Ref KafkaTargetGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt KafkaServiceDiscovery.Arn
+
+  # DNS Record for Kafka
+  KafkaDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub kafka.${DomainName}
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt KafkaLoadBalancer.DNSName
+        HostedZoneId: !GetAtt KafkaLoadBalancer.CanonicalHostedZoneID
 
   WebhookService:
     Type: AWS::ECS::Service
-    DependsOn: WebhookListener
+    DependsOn: 
+      - WebhookListener
+      - KafkaService
     Properties:
       ServiceName: !Sub ${AWS::StackName}-webhook
       Cluster: !Ref ECSCluster
