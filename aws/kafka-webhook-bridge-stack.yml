@@ -403,8 +403,16 @@ Resources:
           EFSVolumeConfiguration:
             FilesystemId: !Ref KafkaFileSystem
             TransitEncryption: ENABLED
-            AccessPointId: !Ref KafkaAccessPoint
-            RootDirectory: /
+            AuthorizationConfig:
+              AccessPointId: !Ref KafkaAccessPoint
+              IAM: ENABLED
+        - Name: zookeeper-data
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref KafkaFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref ZookeeperAccessPoint
+              IAM: ENABLED
       ContainerDefinitions:
         - Name: zookeeper
           Image: !Ref ZookeeperImage
@@ -417,6 +425,8 @@ Resources:
               Value: "2181"
             - Name: ZOOKEEPER_TICK_TIME
               Value: "2000"
+            - Name: ZOOKEEPER_DATA_DIR
+              Value: "/var/lib/zookeeper/data"
           HealthCheck:
             Command:
               - CMD-SHELL
@@ -432,7 +442,7 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: zookeeper
           MountPoints:
-            - SourceVolume: kafka-data
+            - SourceVolume: zookeeper-data
               ContainerPath: /var/lib/zookeeper/data
               ReadOnly: false
         - Name: kafka
@@ -451,7 +461,7 @@ Resources:
             - Name: KAFKA_LISTENERS
               Value: "PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092"
             - Name: KAFKA_ADVERTISED_LISTENERS
-              Value: !Sub "PLAINTEXT://${Stage}-webhooks-kafka:9092,EXTERNAL://kafka.${DomainName}:29092"
+              Value: !Sub "PLAINTEXT://localhost:9092,EXTERNAL://kafka.${DomainName}:29092"
             - Name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
               Value: "PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
             - Name: KAFKA_INTER_BROKER_LISTENER_NAME
@@ -510,7 +520,7 @@ Resources:
               Protocol: tcp
           Environment:
             - Name: KAFKA_BROKERS
-              Value: !Sub "${Stage}-webhooks-kafka:9092"
+              Value: !Sub "kafka.${DomainName}:29092"
             - Name: KAFKA_TOPIC
               Value: !Sub "webhook-events-${Stage}"
             - Name: WEBHOOK_URL
