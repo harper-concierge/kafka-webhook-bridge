@@ -15,12 +15,24 @@ const logger = winston.createLogger({
   ]
 });
 
-// Configure Kafka
-const kafka = new Kafka({
-  clientId: 'webhook-service',
-  brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
-  ssl: false
-});
+const brokers = process.env.KAFKA_BROKERS?.split(',') ?? ['localhost:9092'];
+const username = process.env.KAFKA_BROKER_USERNAME ?? 'webhook';
+const password = process.env.KAFKA_BROKER_PASSWORD ?? 'webhook';
+
+
+const kafkaConfig = {
+  clientId: process.env.KAFKA_CLIENT_ID || 'webhook-service',
+  brokers,
+  ssl: false,
+  sasl: {
+    mechanism: 'plain' as const,
+    username,
+    password,
+  },
+};
+
+console.log(kafkaConfig);
+const kafka = new Kafka(kafkaConfig);
 
 const producer = kafka.producer();
 
@@ -73,4 +85,4 @@ app.listen(port, async () => {
     logger.error('Failed to connect to Kafka', { error });
     process.exit(1);
   }
-}); 
+});

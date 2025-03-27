@@ -1,96 +1,146 @@
-version: '3'
+version: '3.8'
 
 services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:latest
+    container_name: nginx-proxy-kafka
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/vhost.d:/etc/nginx/vhost.d
+      - ./nginx/html:/usr/share/nginx/html
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - webhook-network
+    labels:
+      - "com.github.nginx-proxy.nginx=true"
+
+  nginx-proxy-acme:
+    image: nginxproxy/acme-companion:latest
+    container_name: nginx-proxy-acme
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./nginx/certs:/etc/nginx/certs:rw
+      - ./nginx/vhost.d:/etc/nginx/vhost.d
+      - ./nginx/html:/usr/share/nginx/html
+      - ./nginx/acme:/etc/acme.sh
+    environment:
+      - DEFAULT_EMAIL=your-email@example.com
+      - NGINX_PROXY_CONTAINER=nginx-proxy-kafka
+    depends_on:
+      - nginx-proxy
+
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
+    image: bitnami/zookeeper:3.8
     platform: linux/arm64
     ports:
-      - "9181:2181"
+      - "2181:2181"
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_INIT_LIMIT: 5
-      ZOOKEEPER_SYNC_LIMIT: 2
-      ZOOKEEPER_SERVER_ID: 1
-      ZOOKEEPER_SERVERS: localhost:2888:3888
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_ENABLE_AUTH=no
+      - ZOO_4LW_COMMANDS_WHITELIST=*
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_SERVER_ID=1
+      - ZOOKEEPER_TICK_TIME=2000
+      - ZOOKEEPER_INIT_LIMIT=5
+      - ZOOKEEPER_SYNC_LIMIT=2
+      - ZOOKEEPER_MAX_CLIENT_CNXNS=0
+      - ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=3
+      - ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1
     volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_data:/bitnami
+    networks:
+      - webhook-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: always
 
   kafka:
-    image: confluentinc/cp-kafka:7.3.0
+    image: bitnami/kafka:3.6
     platform: linux/arm64
     ports:
       - "9092:9092"
-      - "9292:29092"
+      - "9094:9094"
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9292
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Zookeeper connection
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ZOOKEEPER_SERVER_ID=1
+
+      # Listener configuration
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://0.0.0.0:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+      # SASL Configuration (for external connections only)
+      - KAFKA_CFG_SASL_ENABLED=true
+      - KAFKA_CFG_SASL_MECHANISM=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
+      - KAFKA_CFG_SASL_CLIENT_USERS=${KAFKA_BROKER_USERNAME}
+      - KAFKA_CFG_SASL_CLIENT_PASSWORDS=${KAFKA_BROKER_PASSWORD}
+      - KAFKA_CFG_SASL_ACL_SUPER_USERS=User:${KAFKA_BROKER_USERNAME}
+      - KAFKA_CFG_LISTENER_NAME_EXTERNAL_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
+
+      # Broker configuration
+      - KAFKA_CFG_BROKER_ID=1
+      - KAFKA_CFG_NUM_PARTITIONS=3
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1
     volumes:
-      - kafka_data:/var/lib/kafka/data
-      - ./kafka/config:/etc/kafka
-      - ./kafka/config/tools-log4j.properties:/usr/bin/../config/tools-log4j.properties
+      - kafka_data:/bitnami
+    networks:
+      - webhook-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.3.0
-    platform: linux/arm64
-    ports:
-      - "9081:8081"
-    depends_on:
-      - kafka
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-
-  rest-proxy:
-    image: confluentinc/cp-kafka-rest:7.3.0
-    platform: linux/arm64
-    ports:
-      - "9082:8082"
-    depends_on:
-      - schema-registry
-    environment:
-      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_REST_HOST_NAME: rest-proxy
-      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
-      KAFKA_REST_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      retries: 3
+    restart: always
 
   webhook:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
-      NODE_ENV: development
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: ${KAFKA_USERNAME:-kafka}
-      KAFKA_PASSWORD: ${KAFKA_PASSWORD:-kafka}
-      KAFKA_CLIENT_ID: kafka-webhook-bridge
-      KAFKA_SSL: "false"
-      PORT: 3000
-      WEBHOOK_USERNAME: ${WEBHOOK_USERNAME:-webhook}
-      WEBHOOK_PASSWORD: ${WEBHOOK_PASSWORD:-webhook}
+      - NODE_ENV=development
+      - KAFKA_BROKERS=kafka:9094
+      - KAFKA_CLIENT_ID=kafka-webhook-bridge
+      - KAFKA_BROKER_USERNAME=${KAFKA_BROKER_USERNAME}
+      - KAFKA_BROKER_PASSWORD=${KAFKA_BROKER_PASSWORD}
+      - PORT=3000
     depends_on:
       kafka:
         condition: service_healthy
+    networks:
+      - webhook-network
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
+      - "nginx-proxy.host=webhook.harperconcierge.dev"
+      - "nginx-proxy.port=3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  webhook-network:
+    driver: bridge
 
 volumes:
   zookeeper_data:

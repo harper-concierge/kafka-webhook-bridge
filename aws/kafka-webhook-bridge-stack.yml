@@ -532,6 +532,8 @@ Resources:
               Value: !Ref WebhookPassword
             - Name: LOG_LEVEL
               Value: "INFO"
+            - Name: PORT
+              Value: "8080"
           HealthCheck:
             Command:
               - CMD-SHELL
