@@ -4,10 +4,9 @@ A service that bridges webhook requests to Kafka topics, supporting both local d
 
 ## Architecture Overview
 
-The system consists of three main components:
-1. Zookeeper (for Kafka cluster coordination)
-2. Kafka (message broker)
-3. Webhook Proxy (receives webhooks and forwards to Kafka)
+The system consists of two main components:
+1. Kafka (message broker with KRaft mode)
+2. Webhook Proxy (receives webhooks and forwards to Kafka)
 
 ### Security Model
 
@@ -18,7 +17,6 @@ The system consists of three main components:
 - **Authentication**:
   - Webhook endpoints: Basic Auth
   - Kafka: SASL/PLAIN authentication for external client connections only
-  - Zookeeper: No authentication (internal network only)
 
 #### Security Architecture
 
@@ -27,7 +25,7 @@ The system consists of three main components:
    - SASL/PLAIN authentication for client connections
    - This provides both encryption and authentication for external clients
 
-2. **Internal Communication (Kafka ↔ Zookeeper)**:
+2. **Internal Communication (Kafka Controller)**:
    - Plaintext communication is secure because:
      - All services run in private subnets (AWS) or Docker network (local)
      - Network access is controlled by security groups (AWS) or Docker network (local)
@@ -86,7 +84,7 @@ The local setup uses a custom nginx-proxy configuration with the following key c
 ### Local Development Architecture
 
 ```
-[Client] -> [Nginx Proxy] -> [Webhook Proxy] -> [Kafka] <- [Zookeeper]
+[Client] -> [Nginx Proxy] -> [Webhook Proxy] -> [Kafka (KRaft)]
 ```
 
 The local setup uses nginx-proxy for SSL termination and routing, with services running in Docker Compose.
@@ -122,7 +120,6 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
 2. The services will be available at:
    - Webhook Proxy: https://webhook.harperconcierge.dev
    - Kafka: localhost:9094
-   - Zookeeper: localhost:2181
 
 ### Common Issues and Solutions
 
@@ -132,13 +129,7 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
      - Label `com.github.nginx-proxy.nginx=true` on the nginx-proxy service
      - Environment variable `NGINX_PROXY_CONTAINER=nginx-proxy-kafka` on the acme-companion service
 
-2. **Zookeeper Port Configuration**
-   - Error: "one of (ZOOKEEPER_CLIENT_PORT,ZOOKEEPER_SECURE_CLIENT_PORT) is required"
-   - Solution: The docker-compose.yml now includes:
-     - `ZOOKEEPER_CLIENT_PORT=2181`
-     - `ZOOKEEPER_SECURE_CLIENT_PORT=2182`
-
-3. **SSL Certificate Issues**
+2. **SSL Certificate Issues**
    - The nginx-proxy-acme service will automatically request SSL certificates
    - Make sure your domain (webhook.harperconcierge.dev) is properly configured in /etc/hosts
    - Check nginx/certs directory permissions if certificate generation fails
@@ -169,7 +160,7 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
 ### Architecture
 
 ```
-[Client] -> [ALB] -> [ECS Service] -> [Webhook Proxy] -> [Kafka] <- [Zookeeper]
+[Client] -> [ALB] -> [ECS Service] -> [Webhook Proxy] -> [Kafka]
 ```
 
 All services run in a single ECS service with the following configuration:
@@ -229,7 +220,6 @@ Note: These environment variables are used for local development only. In AWS, t
 
 ### Docker Images
 
-- Zookeeper: `bitnami/zookeeper:3.8`
 - Kafka: `bitnami/kafka:3.6`
 - Webhook Proxy: Custom image built from `Dockerfile`
 - Nginx Proxy: `nginxproxy/nginx-proxy:latest`
@@ -243,58 +233,40 @@ Note: These environment variables are used for local development only. In AWS, t
 
 ### Service Configuration Details
 
-#### Zookeeper Configuration
-- **Platform**: linux/arm64 (for M1/M2 Macs)
-- **Authentication**: None (internal network only)
-- **Port**: 2181 (client port)
-- **Health Check**: Uses netcat to verify port availability
-- **Volume**: Persistent storage for data
-- **Key Environment Variables**:
-  ```env
-  ALLOW_ANONYMOUS_LOGIN=yes
-  ZOO_ENABLE_AUTH=no
-  ZOO_4LW_COMMANDS_WHITELIST=*
-  ZOOKEEPER_CLIENT_PORT=2181
-  ZOOKEEPER_SERVER_ID=1
-  ZOOKEEPER_TICK_TIME=2000
-  ZOOKEEPER_INIT_LIMIT=5
-  ZOOKEEPER_SYNC_LIMIT=2
-  ZOOKEEPER_MAX_CLIENT_CNXNS=0
-  ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=3
-  ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1
-  ```
-
-#### Kafka Configuration
+#### Kafka Configuration (KRaft Mode)
 - **Platform**: linux/arm64 (for M1/M2 Macs)
 - **Ports**: 
   - 9092: Internal communication (inter-broker)
+  - 9093: Controller communication
   - 9094: External access (client)
 - **Authentication**: SASL/PLAIN for client connections only
 - **Health Check**: Uses kafka-topics.sh to verify broker availability
 - **Volume**: Persistent storage for data
 - **Key Environment Variables**:
   ```env
-  # Zookeeper connection (unauthenticated)
-  KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-  KAFKA_CFG_ZOOKEEPER_SERVER_ID=1
+  # KRaft Configuration
+  KAFKA_ENABLE_KRAFT=yes
+  KAFKA_CFG_PROCESS_ROLES=broker,controller
+  KAFKA_CFG_NODE_ID=1
+  KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9093
 
   # Listener configuration
-  KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://0.0.0.0:9094
-  KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
-  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
-  KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+  KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094
+  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://localhost:9092,EXTERNAL://localhost:9094
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+  KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+  KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
 
-  # SASL Configuration (for client connections only)
+  # SASL Configuration
   KAFKA_CFG_SASL_ENABLED=true
   KAFKA_CFG_SASL_MECHANISM=PLAIN
+  KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN
   KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
-  KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";
-  KAFKA_CFG_SASL_CLIENT_USERS=${KAFKA_USERNAME}
-  KAFKA_CFG_SASL_CLIENT_PASSWORDS=${KAFKA_PASSWORD}
-  KAFKA_CFG_SASL_ACL_SUPER_USERS=User:${KAFKA_USERNAME}
+  KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+  KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
 
   # Broker configuration
-  KAFKA_CFG_BROKER_ID=1
   KAFKA_CFG_NUM_PARTITIONS=3
   KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
   KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
@@ -321,13 +293,11 @@ Note: These environment variables are used for local development only. In AWS, t
   ```
 
 ### Service Dependencies and Health Checks
-- Zookeeper must be healthy before Kafka starts
 - Kafka must be healthy before Webhook service starts
 - Health checks are configured for all services to ensure proper startup order
 - Services use the `webhook-network` bridge network for internal communication
 
 ### Volume Management
-- Zookeeper data is persisted in `zookeeper_data` volume
 - Kafka data is persisted in `kafka_data` volume
 - Nginx certificates and configurations are stored in local `./nginx` directory
 
