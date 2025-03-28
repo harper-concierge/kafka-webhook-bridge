@@ -1,35 +1,22 @@
 services:
   nginx-proxy:
-    image: nginxproxy/nginx-proxy:latest
-    container_name: nginx-proxy-kafka
+    image: nginxproxy/nginx-proxy:1.7-alpine
+    container_name: nginx-proxy
     ports:
       - "80:80"
-      - "443:443"
+      - "8443:443"
     volumes:
+      - ${PWD}/nginx/certs:/etc/nginx/certs:delegated
+      - ${PWD}/nginx/toplevel.conf.d:/etc/nginx/toplevel.conf.d:delegated
       - /var/run/docker.sock:/tmp/docker.sock:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
-      - ./nginx/vhost.d:/etc/nginx/vhost.d
-      - ./nginx/html:/usr/share/nginx/html
-      - ./nginx/conf.d:/etc/nginx/conf.d
-    networks:
-      - webhook-network
-    labels:
-      - "com.github.nginx-proxy.nginx=true"
-
-  nginx-proxy-acme:
-    image: nginxproxy/acme-companion:latest
-    container_name: nginx-proxy-acme
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./nginx/certs:/etc/nginx/certs:rw
-      - ./nginx/vhost.d:/etc/nginx/vhost.d
-      - ./nginx/html:/usr/share/nginx/html
-      - ./nginx/acme:/etc/acme.sh
+    restart: unless-stopped
     environment:
-      - DEFAULT_EMAIL=your-email@example.com
-      - NGINX_PROXY_CONTAINER=nginx-proxy-kafka
-    depends_on:
-      - nginx-proxy
+      TRUST_DOWNSTREAM_PROXY: true
+    networks:
+      webhook-network:
+        aliases:
+          - webhooks.harperconcierge.dev
+          - kafka.harperconcierge.dev
 
   kafka:
     image: bitnami/kafka:3.6
@@ -50,10 +37,11 @@ services:
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
       - KAFKA_CFG_SASL_ENABLED=true
-      - KAFKA_CFG_SASL_MECHANISM=PLAIN
       - KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN
-      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM=PLAIN
       - KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
       - KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
       - KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
       - KAFKA_CFG_LISTENER_NAME_CONTROLLER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
@@ -88,16 +76,16 @@ services:
       - KAFKA_CLIENT_ID=kafka-webhook-bridge
       - KAFKA_BROKER_USERNAME=${KAFKA_BROKER_USERNAME}
       - KAFKA_BROKER_PASSWORD=${KAFKA_BROKER_PASSWORD}
+      - WEBHOOK_USERNAME=${WEBHOOK_USERNAME:-webhook}
+      - WEBHOOK_PASSWORD=${WEBHOOK_PASSWORD:-webhook}
       - PORT=3000
+      - VIRTUAL_HOST=webhooks.harperconcierge.dev
+      - VIRTUAL_PORT=3000
     depends_on:
       kafka:
         condition: service_healthy
     networks:
       - webhook-network
-    labels:
-      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy=true"
-      - "nginx-proxy.host=webhook.harperconcierge.dev"
-      - "nginx-proxy.port=3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s

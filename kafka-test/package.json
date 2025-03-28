@@ -1,0 +1,12 @@
+{
+  "name": "kafka-test",
+  "version": "1.0.0",
+  "description": "Simple Kafka consumer test",
+  "main": "kafka-consumer.js",
+  "scripts": {
+    "start": "node kafka-consumer.js"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+} 
