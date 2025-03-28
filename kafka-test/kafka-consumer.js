@@ -1,10 +1,12 @@
 const { Kafka } = require('kafkajs');
 
 const topic = 'webhook-events';
+const kafkaPort = process.env.KAFKA_EXTERNAL_PORT || '29095';
+
 // Create the kafka instance
 const kafka = new Kafka({
   clientId: 'kafka-consumer',
-  brokers: ['kafka.harperconcierge.dev:8443'],
+  brokers: [`kafka.harperconcierge.dev:${kafkaPort}`],
   ssl: {
     rejectUnauthorized: false,
     servername: 'kafka.harperconcierge.dev',  // matches wildcard cert
