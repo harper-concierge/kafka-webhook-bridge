@@ -77,7 +77,7 @@ The local setup uses nginx-proxy for SSL termination and routing. The configurat
    - `8443`: SSL-terminated Kafka traffic
 
 5. **Environment Variables**:
-   - `TRUST_DOWNSTREAM_PROXY=true`: Required for proper proxy handling
+   - `TRUST_DOWNSTREAM_PROXY=false`: Required for proper proxy handling and security
 
 ### Local Development Architecture
 
