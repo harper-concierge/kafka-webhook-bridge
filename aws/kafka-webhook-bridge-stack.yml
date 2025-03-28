@@ -180,10 +180,19 @@ Resources:
   WebhookCertificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
-      DomainName: !Ref DomainName
+      DomainName: !Sub "webhooks.${DomainName}"
       ValidationMethod: DNS
       DomainValidationOptions:
-        - DomainName: !Ref DomainName
+        - DomainName: !Sub "webhooks.${DomainName}"
+          HostedZoneId: !Ref HostedZoneId
+
+  KafkaCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "kafka.${DomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub "kafka.${DomainName}"
           HostedZoneId: !Ref HostedZoneId
 
   # Security Groups
@@ -347,7 +356,18 @@ Resources:
       HealthCheckCustomConfig:
         FailureThreshold: 1
 
-  # Additional DNS record for Kafka service
+  # Additional DNS records for services
+  WebhookDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "webhooks.${DomainName}."
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt WebhookLoadBalancer.DNSName
+        HostedZoneId: !GetAtt WebhookLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
   KafkaDNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -563,9 +583,15 @@ Outputs:
   KafkaEndpoint:
     Description: Kafka endpoint URL
     Value: !Sub kafka.${DomainName}:${KafkaExternalPort}
-  LoadBalancerDNS:
-    Description: Load Balancer DNS name
+  WebhookLoadBalancerDNS:
+    Description: Webhook Load Balancer DNS name
     Value: !GetAtt WebhookLoadBalancer.DNSName
-  KafkaDNSRecord:
-    Description: Kafka DNS record
-    Value: !Sub "kafka.${DomainName}." 
+  KafkaLoadBalancerDNS:
+    Description: Kafka Load Balancer DNS name
+    Value: !GetAtt KafkaLoadBalancer.DNSName
+  WebhookDNSName:
+    Description: Webhook DNS name
+    Value: !Sub "webhooks.${DomainName}"
+  KafkaDNSName:
+    Description: Kafka DNS name
+    Value: !Sub "kafka.${DomainName}" 

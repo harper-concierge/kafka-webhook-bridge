@@ -5,14 +5,13 @@ set -e
 # Check required arguments
 if [ $# -lt 2 ]; then
     echo "Usage: $0 <command> <stage> [image_tag]"
-    echo "Example: $0 create-stack webhook-bridge"
+    echo "Example: $0 create-stack staging"
     exit 1
 fi
 
 command="$1"
 STAGE="$2"
 IMAGE_TAG="$3"
-SUBDOMAIN="webhook-bridge"
 changeset=""
 
 # Check required environment variables
@@ -58,7 +57,7 @@ fi
 
 # Get the domain name from the HostedZoneId
 DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$KAFKA_HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
-FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
+FULL_DOMAIN="${DOMAIN_NAME}"
 
 # Add domain name parameter
 allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
