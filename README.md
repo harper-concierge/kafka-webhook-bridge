@@ -53,7 +53,7 @@ This security model follows production best practices where:
 
 ### Nginx Proxy Configuration
 
-The local setup uses a custom nginx-proxy configuration with the following key components:
+The local setup uses nginx-proxy for SSL termination and routing. The configuration is managed through Docker Compose with the following key components:
 
 1. **Container Name**: `nginx-proxy-kafka`
    - This specific name is required for proper SSL certificate management
@@ -69,22 +69,20 @@ The local setup uses a custom nginx-proxy configuration with the following key c
 3. **Volume Mounts**:
    - `/var/run/docker.sock`: For Docker API access
    - `./nginx/certs`: For SSL certificates
-   - `./nginx/vhost.d`: For virtual host configurations
-   - `./nginx/html`: For static content
-   - `./nginx/conf.d`: For custom nginx configurations
+   - `./nginx/toplevel.conf.d`: For custom nginx configurations
 
 4. **Ports**:
    - `80`: HTTP traffic
    - `443`: HTTPS traffic
+   - `8443`: SSL-terminated Kafka traffic
 
 5. **Environment Variables**:
-   - `NGINX_PROXY_CONTAINER=nginx-proxy-kafka`: Required for acme-companion to identify the proxy container
-   - `DEFAULT_EMAIL`: Your email for SSL certificate notifications
+   - `TRUST_DOWNSTREAM_PROXY=true`: Required for proper proxy handling
 
 ### Local Development Architecture
 
 ```
-[Client] -> [Nginx Proxy] -> [Webhook Proxy] -> [Kafka (KRaft)]
+[Client] -> [Nginx Proxy (SSL)] -> [Kafka (SASL)] -> [Webhook Proxy] -> [Kafka (Internal)]
 ```
 
 The local setup uses nginx-proxy for SSL termination and routing, with services running in Docker Compose.
@@ -96,8 +94,9 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
    ```bash
    export KAFKA_BROKER_USERNAME=your_kafka_username
    export KAFKA_BROKER_PASSWORD=your_kafka_password
+   export WEBHOOK_USERNAME=your_webhook_username
+   export WEBHOOK_PASSWORD=your_webhook_password
    ```
-   Note: These variables are used for local development only. In AWS, these will be managed through CloudFormation parameters.
 
 3. Set up nginx directories and permissions:
    ```bash
@@ -107,7 +106,7 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
 
 4. Ensure your `/etc/hosts` file has the following entry:
    ```
-   127.0.0.1 webhook.harperconcierge.dev
+   127.0.0.1 harperconcierge.dev
    ```
 
 ### Running Locally
@@ -118,8 +117,9 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
    ```
 
 2. The services will be available at:
-   - Webhook Proxy: https://webhook.harperconcierge.dev
-   - Kafka: localhost:9094
+   - Webhook Proxy: https://webhooks.harperconcierge.dev
+   - Kafka (SSL): kafka.harperconcierge.dev:8443
+   - Kafka (Direct): localhost:9094
 
 ### Common Issues and Solutions
 
@@ -131,7 +131,7 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
 
 2. **SSL Certificate Issues**
    - The nginx-proxy-acme service will automatically request SSL certificates
-   - Make sure your domain (webhook.harperconcierge.dev) is properly configured in /etc/hosts
+   - Make sure your domain (webhooks.harperconcierge.dev) is properly configured in /etc/hosts
    - Check nginx/certs directory permissions if certificate generation fails
 
 4. **Container Health Checks**
@@ -238,7 +238,8 @@ Note: These environment variables are used for local development only. In AWS, t
 - **Ports**: 
   - 9092: Internal communication (inter-broker)
   - 9093: Controller communication
-  - 9094: External access (client)
+  - 9094: External direct access (client)
+  - 9095: Nginx-proxied access (client)
 - **Authentication**: SASL/PLAIN for client connections only
 - **Health Check**: Uses kafka-topics.sh to verify broker availability
 - **Volume**: Persistent storage for data
@@ -251,9 +252,9 @@ Note: These environment variables are used for local development only. In AWS, t
   KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9093
 
   # Listener configuration
-  KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094
-  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://localhost:9092,EXTERNAL://localhost:9094
-  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+  KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094,NGINX://0.0.0.0:9095
+  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://kafka:9092,EXTERNAL://localhost:9094,NGINX://kafka.harperconcierge.dev:8443
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,NGINX:SASL_PLAINTEXT
   KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
   KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
 
@@ -263,15 +264,32 @@ Note: These environment variables are used for local development only. In AWS, t
   KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN
   KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
   KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+  KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
   KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
   KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  KAFKA_CFG_LISTENER_NAME_NGINX_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  ```
 
-  # Broker configuration
-  KAFKA_CFG_NUM_PARTITIONS=3
-  KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
-  KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-  KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
-  KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1
+#### Nginx Stream Configuration
+- **Port**: 8443 (SSL)
+- **SSL Configuration**:
+  ```nginx
+  stream {
+      server {
+          listen 8443 ssl;
+          ssl_certificate /etc/nginx/certs/harperconcierge.dev.crt;
+          ssl_certificate_key /etc/nginx/certs/harperconcierge.dev.key;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_ciphers HIGH:!aNULL:!MD5;
+          ssl_prefer_server_ciphers off;
+          ssl_session_timeout 5m;
+          ssl_session_cache shared:STREAM_SSL:50m;
+          ssl_session_tickets off;
+          proxy_connect_timeout 10s;
+          proxy_timeout 60s;
+          proxy_pass kafka:9095;
+      }
+  }
   ```
 
 #### Webhook Service Configuration

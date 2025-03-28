@@ -12,7 +12,7 @@ services:
       - /var/run/docker.sock:/tmp/docker.sock:ro
     restart: unless-stopped
     environment:
-      TRUST_DOWNSTREAM_PROXY: true
+      TRUST_DOWNSTREAM_PROXY: false
     networks:
       webhook-network:
         aliases:
