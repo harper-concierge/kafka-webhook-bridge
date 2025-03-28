@@ -40,6 +40,13 @@ Parameters:
     Type: Number
     Default: 29095
     Description: External port for Kafka connections
+  KafkaInternalDnsName:
+    Type: String
+    Description: Internal DNS name for the Kafka container (used by the webhook)
+  KafkaImage:
+    Type: String
+    Default: bitnami/kafka:3.7
+    Description: Docker image for Kafka
 
 Resources:
   # VPC and Network Configuration
@@ -213,6 +220,27 @@ Resources:
           ToPort: 9095
           SourceSecurityGroupId: !Ref NLBSecurityGroup
 
+  WebhookSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Webhook service
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  # Allow webhook to connect to Kafka
+  WebhookToKafkaIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref KafkaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9092
+      ToPort: 9095
+      SourceSecurityGroupId: !Ref WebhookSecurityGroup
+
   # Application Load Balancer (for webhooks)
   WebhookLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -297,6 +325,55 @@ Resources:
     Properties:
       ClusterName: !Sub ${Stage}-webhooks-cluster
 
+  # Service Discovery
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub "${Stage}.webhooks-bridge.local"
+      Vpc: !Ref VPC
+      Description: Private DNS namespace for service discovery
+
+  KafkaServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    DependsOn: ServiceDiscoveryNamespace
+    Properties:
+      Name: kafka
+      NamespaceId: !Ref ServiceDiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - Type: A
+            TTL: 30
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  # Additional DNS record for Kafka service
+  KafkaDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "kafka.${DomainName}."
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt KafkaLoadBalancer.DNSName
+        HostedZoneId: !GetAtt KafkaLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+  # Create an additional service discovery service for Kafka internal communication
+  KafkaInternalServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    DependsOn: ServiceDiscoveryNamespace
+    Properties:
+      Name: kafka-internal
+      NamespaceId: !Ref ServiceDiscoveryNamespace
+      DnsConfig:
+        DnsRecords:
+          - Type: A
+            TTL: 30
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
   # Task Definitions
   KafkaTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -311,7 +388,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: kafka
-          Image: bitnami/kafka:3.6
+          Image: !Ref KafkaImage
           Essential: true
           PortMappings:
             - ContainerPort: 9093
@@ -336,7 +413,7 @@ Resources:
             - Name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
               Value: "CONTROLLER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,BROKER:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT"
             - Name: KAFKA_CFG_ADVERTISED_LISTENERS
-              Value: !Sub "INTERNAL://${KafkaService.Name}.${ECSCluster.Name}.internal:9094,BROKER://${KafkaService.Name}.${ECSCluster.Name}.internal:9095,PROXY://${KafkaLoadBalancer.DNSName}:${KafkaExternalPort}"
+              Value: !Sub "INTERNAL://${KafkaInternalDnsName}:9094,BROKER://${KafkaInternalDnsName}:9095,PROXY://kafka.${DomainName}:${KafkaExternalPort}"
             - Name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
               Value: "CONTROLLER"
             - Name: KAFKA_CFG_SASL_ENABLED_MECHANISMS
@@ -357,6 +434,35 @@ Resources:
               awslogs-group: !Ref CloudWatchLogsGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: kafka
+
+  # ECS Services
+  KafkaService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - KafkaListener
+      - KafkaServiceDiscovery
+      - KafkaInternalServiceDiscovery
+    Properties:
+      ServiceName: !Sub ${Stage}-webhooks-kafka
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref KafkaTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref KafkaSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref KafkaTargetGroup
+          ContainerName: kafka
+          ContainerPort: 9095
+      ServiceRegistries:
+        - RegistryArn: !GetAtt KafkaServiceDiscovery.Arn
+        - RegistryArn: !GetAtt KafkaInternalServiceDiscovery.Arn
 
   WebhookTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -382,7 +488,7 @@ Resources:
             - Name: WEBHOOK_PASSWORD
               Value: !Ref WebhookPassword
             - Name: KAFKA_BROKERS
-              Value: !Sub "${KafkaService.Name}.${ECSCluster.Name}.internal:9094"
+              Value: !Sub "${KafkaInternalDnsName}:9094"
             - Name: KAFKA_USERNAME
               Value: !Ref KafkaUsername
             - Name: KAFKA_PASSWORD
@@ -394,32 +500,11 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: webhook
 
-  # ECS Services
-  KafkaService:
-    Type: AWS::ECS::Service
-    DependsOn: KafkaListener
-    Properties:
-      ServiceName: !Sub ${Stage}-webhooks-kafka
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref KafkaTaskDefinition
-      DesiredCount: 1
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
-          SecurityGroups:
-            - !Ref KafkaSecurityGroup
-          AssignPublicIp: DISABLED
-      LoadBalancers:
-        - TargetGroupArn: !Ref KafkaTargetGroup
-          ContainerName: kafka
-          ContainerPort: 9095
-
   WebhookService:
     Type: AWS::ECS::Service
-    DependsOn: WebhookListener
+    DependsOn:
+      - WebhookListener
+      - WebhookTaskDefinition
     Properties:
       ServiceName: !Sub ${Stage}-webhooks-service
       Cluster: !Ref ECSCluster
@@ -432,7 +517,7 @@ Resources:
             - !Ref PrivateSubnet1
             - !Ref PrivateSubnet2
           SecurityGroups:
-            - !Ref KafkaSecurityGroup
+            - !Ref WebhookSecurityGroup
           AssignPublicIp: DISABLED
       LoadBalancers:
         - TargetGroupArn: !Ref WebhookTargetGroup
@@ -480,4 +565,7 @@ Outputs:
     Value: !Sub kafka.${DomainName}:${KafkaExternalPort}
   LoadBalancerDNS:
     Description: Load Balancer DNS name
-    Value: !GetAtt WebhookLoadBalancer.DNSName 
+    Value: !GetAtt WebhookLoadBalancer.DNSName
+  KafkaDNSRecord:
+    Description: Kafka DNS record
+    Value: !Sub "kafka.${DomainName}." 

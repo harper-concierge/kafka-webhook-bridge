@@ -6,7 +6,7 @@ ECR_REGISTRY="$(aws ecr describe-registry --query 'registryId' --output text).dk
 CONFLUENT_VERSION="3.6"
 
 # Create repositories if they don't exist
-for repo in cp-zookeeper cp-kafka cp-schema-registry cp-kafka-rest; do
+for repo in kafka; do
     aws ecr describe-repositories --repository-names "${repo}" 2>/dev/null || \
     aws ecr create-repository --repository-name "${repo}" \
         --image-scanning-configuration scanOnPush=true \
@@ -39,4 +39,4 @@ mirror_image "kafka" "${CONFLUENT_VERSION}"
 
 # Output the new image URLs for updating CloudFormation
 echo -e "\nUpdate your CloudFormation template with these image URLs:"
-echo "Kafka: ${ECR_REGISTRY}/cp-kafka:${CONFLUENT_VERSION}"
+echo "Kafka: ${ECR_REGISTRY}/kafka:${CONFLUENT_VERSION}"
