@@ -3,10 +3,10 @@
 # Set variables
 AWS_REGION="eu-west-1"  # Update this if your region is different
 ECR_REGISTRY="$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.${AWS_REGION}.amazonaws.com"
-CONFLUENT_VERSION="7.3.0"
+CONFLUENT_VERSION="3.6"
 
 # Create repositories if they don't exist
-for repo in cp-zookeeper cp-kafka cp-schema-registry cp-kafka-rest; do
+for repo in kafka; do
     aws ecr describe-repositories --repository-names "${repo}" 2>/dev/null || \
     aws ecr create-repository --repository-name "${repo}" \
         --image-scanning-configuration scanOnPush=true \
@@ -18,7 +18,7 @@ aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AW
 
 # Function to mirror an image
 mirror_image() {
-    local source_image="confluentinc/$1:$2"
+    local source_image="bitnami/$1:$2"
     local target_image="${ECR_REGISTRY}/$1:$2"
 
     echo "Pulling ${source_image} (amd64)..."
@@ -35,14 +35,8 @@ mirror_image() {
 
 # Mirror images
 echo "Starting image mirroring..."
-mirror_image "cp-zookeeper" "${CONFLUENT_VERSION}"
-mirror_image "cp-kafka" "${CONFLUENT_VERSION}"
-mirror_image "cp-schema-registry" "${CONFLUENT_VERSION}"
-mirror_image "cp-kafka-rest" "${CONFLUENT_VERSION}"
+mirror_image "kafka" "${CONFLUENT_VERSION}"
 
 # Output the new image URLs for updating CloudFormation
 echo -e "\nUpdate your CloudFormation template with these image URLs:"
-echo "Zookeeper: ${ECR_REGISTRY}/cp-zookeeper:${CONFLUENT_VERSION}"
-echo "Kafka: ${ECR_REGISTRY}/cp-kafka:${CONFLUENT_VERSION}"
-echo "Schema Registry: ${ECR_REGISTRY}/cp-schema-registry:${CONFLUENT_VERSION}"
-echo "REST Proxy: ${ECR_REGISTRY}/cp-kafka-rest:${CONFLUENT_VERSION}"
+echo "Kafka: ${ECR_REGISTRY}/kafka:${CONFLUENT_VERSION}"

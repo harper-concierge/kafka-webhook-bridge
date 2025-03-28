@@ -17,11 +17,11 @@ changeset=""
 
 # Check required environment variables
 required_vars=(
-    "KAFKA_USERNAME"
-    "KAFKA_PASSWORD"
+    "KAFKA_BROKER_USERNAME"
+    "KAFKA_BROKER_PASSWORD"
     "WEBHOOK_USERNAME"
     "WEBHOOK_PASSWORD"
-    "HOSTED_ZONE_ID"
+    "KAFKA_HOSTED_ZONE_ID"
 )
 
 missing_vars=()
@@ -44,21 +44,16 @@ allParameters=()
 echo "Setting Env Vars"
 
 # Add parameters from environment variables
-allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_USERNAME}'")
-allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_PASSWORD}'")
+allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_BROKER_USERNAME}'")
+allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSWORD}'")
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
-allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${HOSTED_ZONE_ID}'")
+allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
 
 # Add container image parameters only if they are set
 if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
   allParameters+=("ParameterKey=KafkaImage,ParameterValue='${KAFKA_CONTAINER_IMAGE}'")
   echo "Overriding Kafka image with ${KAFKA_CONTAINER_IMAGE}"
-fi
-
-if [ -n "${ZOOKEEPER_CONTAINER_IMAGE:-}" ]; then
-  allParameters+=("ParameterKey=ZookeeperImage,ParameterValue='${ZOOKEEPER_CONTAINER_IMAGE}'")
-  echo "Overriding Zookper image with ${ZOOKEEPER_CONTAINER_IMAGE}"
 fi
 
 # Get the domain name from the HostedZoneId
@@ -67,6 +62,9 @@ FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
 
 # Add domain name parameter
 allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
+
+INTERNAL_KAFKA_DOMAIN="kafka-internal.${STAGE}.webhooks-bridge.local"
+allParameters+=("ParameterKey=KafkaInternalDnsName,ParameterValue='${INTERNAL_KAFKA_DOMAIN}'")
 
 # Handle image tag
 if [ "$command" = "update-stack" ]; then
