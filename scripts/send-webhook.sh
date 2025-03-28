@@ -1,94 +1,101 @@
 #!/bin/bash
+# Script to test the webhook service with various topics and HTTP methods
 
-set -euo pipefail
+# Configuration
+HOST=${WEBHOOK_HOST:-"localhost:3000"}
+USERNAME=${WEBHOOK_USERNAME:-"admin"}
+PASSWORD=${WEBHOOK_PASSWORD:-"admin-secret"}
+AUTH_HEADER="Authorization: Basic $(echo -n "$USERNAME:$PASSWORD" | base64)"
 
-# Default values
-ENV=${ENV:-local}
-WEBHOOK_URL=${WEBHOOK_URL:-https://webhooks.harperconcierge.dev:443/webhook}
-WEBHOOK_USERNAME=${WEBHOOK_USERNAME:-webhook}
-WEBHOOK_PASSWORD=${WEBHOOK_PASSWORD:-webhook}
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-# Function to display usage
-usage() {
-    echo "Usage: $0 [options]"
-    echo "Options:"
-    echo "  -e, --env <environment>    Environment (local|production) [default: local]"
-    echo "  -u, --url <url>           Webhook URL [default: https://webhooks.harperconcierge.dev/webhook]"
-    echo "  -n, --username <username>  Basic auth username [default: webhook]"
-    echo "  -p, --password <password>  Basic auth password [default: webhook]"
-    echo "  -h, --help                Display this help message"
-    exit 1
+# Test function
+send_request() {
+  local method=$1
+  local topic=$2
+  local path=$3
+  local payload=$4
+  local url="https://$HOST/webhooks/$topic/$path"
+
+  echo -e "${BLUE}Sending $method request to topic '$topic' with path '$path'${NC}"
+
+  if [ "$method" == "GET" ] || [ "$method" == "DELETE" ]; then
+    # GET and DELETE requests don't have a body
+    response=$(curl -s -X "$method" \
+      -H "$AUTH_HEADER" \
+      -H "Content-Type: application/json" \
+      "$url")
+  else
+    # POST, PUT, PATCH with payload
+    response=$(curl -s -X "$method" \
+      -H "$AUTH_HEADER" \
+      -H "Content-Type: application/json" \
+      -d "$payload" \
+      "$url")
+  fi
+
+  # Check if successful
+  if echo "$response" | grep -q '"status":"ok"'; then
+    echo -e "${GREEN}Success!${NC} Message sent to Kafka"
+    echo -e "${YELLOW}Response:${NC} $response"
+  else
+    echo -e "${RED}Error!${NC} Failed to send message"
+    echo -e "${YELLOW}Response:${NC} $response"
+  fi
+  echo ""
 }
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -e|--env)
-            ENV="$2"
-            shift 2
-            ;;
-        -u|--url)
-            WEBHOOK_URL="$2"
-            shift 2
-            ;;
-        -n|--username)
-            WEBHOOK_USERNAME="$2"
-            shift 2
-            ;;
-        -p|--password)
-            WEBHOOK_PASSWORD="$2"
-            shift 2
-            ;;
-        -h|--help)
-            usage
-            ;;
-        *)
-            echo "Unknown option: $1"
-            usage
-            ;;
-    esac
-done
+# Main test sequence
+echo -e "${BLUE}=== Testing Webhook Service at $HOST ===${NC}"
 
-# Set production URL if environment is production
-if [ "$ENV" = "production" ]; then
-    WEBHOOK_URL="https://${DOMAIN_NAME}/webhook"
-fi
+# Test various topics and methods
+echo -e "${BLUE}Testing with different topics and HTTP methods...${NC}"
 
-# Send the webhook
-echo "Sending Shopify webhook to $WEBHOOK_URL..."
-curl -k -X POST "$WEBHOOK_URL" \
-    -H "Content-Type: application/json" \
-    -H "X-Shopify-Topic: orders/create" \
-    -H "X-Shopify-Shop-Domain: your-store.myshopify.com" \
-    -H "X-Shopify-Hmac-SHA256: example_hmac_hash" \
-    -H "X-Shopify-API-Version: 2024-01" \
-    -u "${WEBHOOK_USERNAME}:${WEBHOOK_PASSWORD}" \
-    -d '{
-        "event": "orders/create",
-        "data": {
-            "id": 123456789,
-            "email": "customer@example.com",
-            "total_price": "99.99",
-            "currency": "USD",
-            "created_at": "2024-03-27T18:45:00Z",
-            "line_items": [
-                {
-                    "id": 987654321,
-                    "title": "Test Product",
-                    "quantity": 1,
-                    "price": "99.99"
-                }
-            ],
-            "shipping_address": {
-                "first_name": "John",
-                "last_name": "Doe",
-                "address1": "123 Main St",
-                "city": "New York",
-                "province": "NY",
-                "zip": "10001",
-                "country": "United States"
-            }
-        }
-    }'
+# GitHub webhook simulation
+send_request "POST" "github-events" "push" '{
+  "event": "push",
+  "ref": "refs/heads/main",
+  "repository": {
+    "name": "test-repo",
+    "full_name": "user/test-repo"
+  },
+  "commits": [
+    {
+      "id": "abc123",
+      "message": "Test commit"
+    }
+  ]
+}'
 
-echo -e "\nWebhook sent successfully!"
+# Stripe webhook simulation
+send_request "POST" "stripe-events" "charge-succeeded" '{
+  "event": "charge.succeeded",
+  "data": {
+    "object": {
+      "id": "ch_123456",
+      "amount": 1000,
+      "currency": "usd"
+    }
+  }
+}'
+
+# Test with GET method
+send_request "GET" "monitoring" "status" ''
+
+# Test with PUT method
+send_request "PUT" "user-updates" "profile/123" '{
+  "event": "profile_update",
+  "user_id": 123,
+  "name": "John Doe",
+  "email": "john@example.com"
+}'
+
+# Test with DELETE method
+send_request "DELETE" "user-events" "account/456" ''
+
+echo -e "${BLUE}=== Testing Complete ===${NC}"
