@@ -1,171 +1,379 @@
-# Kafka Webhook Bridge Service
+# Kafka Webhook Bridge
 
-This service acts as a bridge between external webhook providers and Kafka. It receives webhooks via HTTP and forwards them to Kafka topics.
+A service that bridges webhook requests to Kafka topics, supporting both local development and AWS deployment.
 
-## Features
+## Architecture Overview
 
-- Receives webhooks via HTTP with Basic Authentication
-- Forwards webhooks to Kafka topics
-- Runs both locally and in AWS
-- Supports multiple environments (test, staging, production)
-- Handles message persistence and retry logic
-- Provides monitoring and logging
+The system consists of two main components:
+1. Kafka (message broker with KRaft mode)
+2. Webhook Proxy (receives webhooks and forwards to Kafka)
 
-## Local Development
+### Security Model
 
-### Local Development Prerequisites
+- **External Webhook Access**: HTTPS terminated at the load balancer (AWS) or nginx-proxy (local)
+- **Internal Communication**: 
+  - Local: Plain text between services
+  - AWS: SSL/TLS between services, terminated at the load balancer
+- **Authentication**:
+  - Webhook endpoints: Basic Auth
+  - Kafka: SASL/PLAIN authentication for external client connections only
+
+#### Security Architecture
+
+1. **External Access (Client → Kafka)**:
+   - SSL/TLS terminated at the load balancer (ALB in AWS) or nginx-proxy (local)
+   - SASL/PLAIN authentication for client connections
+   - This provides both encryption and authentication for external clients
+
+2. **Internal Communication (Kafka Controller)**:
+   - Plaintext communication is secure because:
+     - All services run in private subnets (AWS) or Docker network (local)
+     - Network access is controlled by security groups (AWS) or Docker network (local)
+     - No direct internet access to these services
+     - Communication is internal to the VPC/network
+
+3. **Security Layers**:
+   - Network level: Private subnets + Security groups (AWS) or Docker network (local)
+   - Transport level: SSL/TLS at load balancer
+   - Application level: SASL/PLAIN for client authentication
+
+This security model follows production best practices where:
+- The load balancer handles SSL/TLS termination
+- Internal services communicate over a trusted network
+- Authentication is handled at the application level
+- Network security is handled at the infrastructure level
+
+## Local Development Setup
+
+### Prerequisites
 
 - Docker and Docker Compose
-- Node.js 18+
-- AWS CLI (for deployment)
-- 1Password CLI (for secret management)
+- Node.js 20+
+- Make (optional, for using Makefile commands)
 
-### Local Environment Variables
+### Nginx Proxy Configuration
 
-Create a `.env` file in the root directory with the following variables:
+The local setup uses nginx-proxy for SSL termination and routing. The configuration is managed through Docker Compose with the following key components:
 
-```env
-NODE_ENV=development
-KAFKA_BROKERS=kafka:29092
-KAFKA_USERNAME=kafka
-KAFKA_PASSWORD=kafka
-KAFKA_CLIENT_ID=kafka-webhook-bridge
-KAFKA_SSL=false
-PORT=3000
-WEBHOOK_USERNAME=webhook
-WEBHOOK_PASSWORD=webhook
+1. **Container Name**: `nginx-proxy-kafka`
+   - This specific name is required for proper SSL certificate management
+   - The acme-companion service is configured to look for this container name
+
+2. **Required Labels**:
+   ```yaml
+   labels:
+     - "com.github.nginx-proxy.nginx=true"
+   ```
+   This label is required for the acme-companion to identify the nginx-proxy container.
+
+3. **Volume Mounts**:
+   - `/var/run/docker.sock`: For Docker API access
+   - `./nginx/certs`: For SSL certificates
+   - `./nginx/toplevel.conf.d`: For custom nginx configurations
+
+4. **Ports**:
+   - `80`: HTTP traffic
+   - `443`: HTTPS traffic
+   - `8443`: SSL-terminated Kafka traffic
+
+5. **Environment Variables**:
+   - `TRUST_DOWNSTREAM_PROXY=false`: Required for proper proxy handling and security
+
+### Local Development Architecture
+
 ```
+[Client] -> [Nginx Proxy (SSL)] -> [Kafka (SASL)] -> [Webhook Proxy] -> [Kafka (Internal)]
+```
+
+The local setup uses nginx-proxy for SSL termination and routing, with services running in Docker Compose.
+
+### Initial Setup
+
+1. Clone the repository
+2. Configure your local environment variables using `.envrc`:
+   ```bash
+   export KAFKA_BROKER_USERNAME=your_kafka_username
+   export KAFKA_BROKER_PASSWORD=your_kafka_password
+   export WEBHOOK_USERNAME=your_webhook_username
+   export WEBHOOK_PASSWORD=your_webhook_password
+   ```
+
+3. Set up nginx directories and permissions:
+   ```bash
+   chmod +x scripts/setup-nginx.sh
+   ./scripts/setup-nginx.sh
+   ```
+
+4. Ensure your `/etc/hosts` file has the following entry:
+   ```
+   127.0.0.1 harperconcierge.dev
+   ```
 
 ### Running Locally
 
-1. Start the local development environment:
-
+1. Start the services:
    ```bash
    docker-compose up -d
    ```
 
-2. The service will be available at `http://localhost:3000`
+2. The services will be available at:
+   - Webhook Proxy: https://webhooks.harperconcierge.dev
+   - Kafka (SSL): kafka.harperconcierge.dev:8443
+   - Kafka (Direct): localhost:9094
 
-3. To stop the service:
+### Common Issues and Solutions
 
+1. **Nginx Proxy ACME Companion Issues**
+   - Error: "can't get nginx-proxy container ID"
+   - Solution: The docker-compose.yml now includes:
+     - Label `com.github.nginx-proxy.nginx=true` on the nginx-proxy service
+     - Environment variable `NGINX_PROXY_CONTAINER=nginx-proxy-kafka` on the acme-companion service
+
+2. **SSL Certificate Issues**
+   - The nginx-proxy-acme service will automatically request SSL certificates
+   - Make sure your domain (webhooks.harperconcierge.dev) is properly configured in /etc/hosts
+   - Check nginx/certs directory permissions if certificate generation fails
+
+4. **Container Health Checks**
+   - Services are configured with health checks to ensure proper startup order
+   - If a service fails to start, check the logs:
+     ```bash
+     docker-compose logs <service-name>
+     ```
+
+### Development Workflow
+
+1. Make changes to the webhook proxy code
+2. Rebuild and restart the webhook service:
    ```bash
-   docker-compose down
+   docker-compose build webhook
+   docker-compose up -d webhook
+   ```
+
+3. View logs:
+   ```bash
+   docker-compose logs -f webhook
    ```
 
 ## AWS Deployment
 
-### AWS Deployment Prerequisites
+### Architecture
 
-- AWS CLI configured with appropriate credentials
-- Access to AWS ECR, ECS, and Route53 services
-- 1Password CLI configured with access to the Environments vault
+```
+[Client] -> [ALB] -> [ECS Service] -> [Webhook Proxy] -> [Kafka]
+```
 
-### Environment Setup
+All services run in a single ECS service with the following configuration:
+- Fargate launch type
+- No Auto-scaling. Single task
+- Application Load Balancer for SSL termination
+- VPC endpoints for ECR and CloudWatch Logs
+- Security groups for internal communication
+- Kafka & zookeper have access to a persistent storage
 
-1. Generate environment variables from 1Password:
+### Deployment Process
 
+1. Build and push Docker images to ECR:
    ```bash
-   aws/get_env_vars.sh > .envrc
-   direnv allow
+   ./scripts/release.sh
    ```
 
-   This will set up the following environment variables:
-   - `KAFKA_USERNAME`
-   - `KAFKA_PASSWORD`
-   - `WEBHOOK_USERNAME`
-   - `WEBHOOK_PASSWORD`
-   - `HOSTED_ZONE_ID`
-
-### Deployment
-
-1. Deploy the stack:
-
+2. Deploy the CloudFormation stack:
    ```bash
-   # Deploy with default image tag
-   aws/deploy.sh webhook-bridge
-
-   # Deploy with specific image tag
-   aws/deploy.sh webhook-bridge v1.2.3
+   ./aws/deploy.sh production v1.0.13
    ```
 
-2. Update the stack:
-
+3. Update the stack (when needed):
    ```bash
-   # Update with current image tag
-   aws/update.sh webhook-bridge
-
-   # Update with specific image tag
-   aws/update.sh webhook-bridge v1.2.3
+   ./aws/update.sh production [v1.0.13] #optional
    ```
 
-## Architecture
+### Security Implementation
 
-### Local Development Architecture
+1. **SSL/TLS Certificates**:
+   - Automatically generated using AWS Certificate Manager
+   - Managed through CloudFormation
+   - No certificates committed to the repository
 
-- Uses Docker Compose to run Kafka, Zookeeper, and the service
-- Kafka runs in a single-node configuration
-- No SSL/TLS encryption for local development
+2. **Authentication**:
+   - Webhook credentials managed through environment Variables and passed through as parameters
+   - Kafka credentials managed through environment Variables and passed through as parameters
+   - Zookeeper credentials internally hard configured
 
-### AWS Production Architecture
+3. **Network Security**:
+   - All services run in private subnets
+   - VPC endpoints for AWS services
+   - Security groups for service-to-service communication
 
-- Runs on AWS ECS Fargate
-- Uses self-contained Kafka cluster on ECS
-- Implements SSL/TLS encryption with ACM certificates
-- Uses EFS for persistent storage
-- Includes monitoring and logging via CloudWatch
-- Uses Route53 for DNS management
+## Configuration
 
-## Webhook Endpoints
+### Environment Variables
 
-### Health Check
+Key environment variables for local development (configured via `.envrc`):
+- `KAFKA_BROKER_USERNAME`: Kafka client username
+- `KAFKA_BROKER_PASSWORD`: Kafka client password
+- `KAFKA_CONTAINER_IMAGE`: Override default Kafka image
+- `KAFKA_HOSTED_ZONE_ID`: AWS Route 53 hosted zone ID for DNS management
+- `ZOOKEEPER_CONTAINER_IMAGE`: Override default Zookeeper image
 
-- `GET /health` - Health check endpoint
+Note: These environment variables are used for local development only. In AWS, these values will be managed through CloudFormation parameters and AWS Systems Manager Parameter Store.
 
-### Webhook Endpoint
+### Docker Images
 
-- `POST /webhook` - Main webhook endpoint (requires Basic Authentication)
+- Kafka: `bitnami/kafka:3.6`
+- Webhook Proxy: Custom image built from `Dockerfile`
+- Nginx Proxy: `nginxproxy/nginx-proxy:latest`
+- ACME Companion: `nginxproxy/acme-companion:latest`
+
+### Environment Variable Naming Conventions
+
+- **Bitnami Images**: Use `KAFKA_CFG_*` prefix for Kafka configurations (e.g., `KAFKA_CFG_LISTENERS`, `KAFKA_CFG_ADVERTISED_LISTENERS`)
+- **Webhook Service**: Uses standard environment variable names (e.g., `KAFKA_*`, `WEBHOOK_*`)
+- **Nginx Proxy**: Uses standard environment variable names (e.g., `NGINX_*`)
+
+### Service Configuration Details
+
+#### Kafka Configuration (KRaft Mode)
+- **Platform**: linux/arm64 (for M1/M2 Macs)
+- **Ports**: 
+  - 9092: Internal communication (inter-broker)
+  - 9093: Controller communication
+  - 9094: External direct access (client)
+  - 9095: Nginx-proxied access (client)
+- **Authentication**: SASL/PLAIN for client connections only
+- **Health Check**: Uses kafka-topics.sh to verify broker availability
+- **Volume**: Persistent storage for data
+- **Key Environment Variables**:
+  ```env
+  # KRaft Configuration
+  KAFKA_ENABLE_KRAFT=yes
+  KAFKA_CFG_PROCESS_ROLES=broker,controller
+  KAFKA_CFG_NODE_ID=1
+  KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9093
+
+  # Listener configuration
+  KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094,NGINX://0.0.0.0:9095
+  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://kafka:9092,EXTERNAL://localhost:9094,NGINX://kafka.harperconcierge.dev:8443
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,NGINX:SASL_PLAINTEXT
+  KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+  KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
+
+  # SASL Configuration
+  KAFKA_CFG_SASL_ENABLED=true
+  KAFKA_CFG_SASL_MECHANISM=PLAIN
+  KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN
+  KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+  KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+  KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
+  KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  KAFKA_CFG_LISTENER_NAME_NGINX_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+  ```
+
+#### Nginx Stream Configuration
+- **Port**: 8443 (SSL)
+- **SSL Configuration**:
+  ```nginx
+  stream {
+      server {
+          listen 8443 ssl;
+          ssl_certificate /etc/nginx/certs/harperconcierge.dev.crt;
+          ssl_certificate_key /etc/nginx/certs/harperconcierge.dev.key;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_ciphers HIGH:!aNULL:!MD5;
+          ssl_prefer_server_ciphers off;
+          ssl_session_timeout 5m;
+          ssl_session_cache shared:STREAM_SSL:50m;
+          ssl_session_tickets off;
+          proxy_connect_timeout 10s;
+          proxy_timeout 60s;
+          proxy_pass kafka:9095;
+      }
+  }
+  ```
+
+#### Webhook Service Configuration
+- **Port**: 3000 (internal only, exposed to nginx-proxy)
+- **Health Check**: HTTP endpoint at /health
+- **Key Environment Variables**:
+  ```env
+  NODE_ENV=development
+  KAFKA_BROKERS=kafka:9092
+  KAFKA_CLIENT_ID=kafka-webhook-bridge
+  KAFKA_SSL=false
+  KAFKA_SASL=true
+  KAFKA_SASL_MECHANISM=PLAIN
+  KAFKA_SASL_USERNAME=${KAFKA_USERNAME}
+  KAFKA_SASL_PASSWORD=${KAFKA_PASSWORD}
+  PORT=3000
+  WEBHOOK_USERNAME=${WEBHOOK_USERNAME:-webhook}
+  WEBHOOK_PASSWORD=${WEBHOOK_PASSWORD:-webhook}
+  ```
+
+### Service Dependencies and Health Checks
+- Kafka must be healthy before Webhook service starts
+- Health checks are configured for all services to ensure proper startup order
+- Services use the `webhook-network` bridge network for internal communication
+
+### Volume Management
+- Kafka data is persisted in `kafka_data` volume
+- Nginx certificates and configurations are stored in local `./nginx` directory
 
 ## Monitoring and Logging
 
-- Application logs are sent to CloudWatch Logs
-- Health check endpoint at `/health`
-- ECS service metrics available in CloudWatch
+- CloudWatch Logs for all container logs
+- CloudWatch Metrics for service health
+- Container Insights for detailed monitoring
+- Health checks configured for all services
 
-## Security
+## Development Workflow
 
-- Webhook endpoints use HTTP Basic Authentication
-- Kafka connections use SASL/SCRAM authentication
-- TLS encryption for all external communications
-- EFS encryption for data at rest
+1. Local development using Docker Compose
+2. Testing with local Kafka and Zookeeper
+3. CI/CD pipeline for automated testing
+4. Deployment to AWS using CloudFormation
+
+## Maintenance
+
+### Updating Dependencies
+
+1. Update package.json
+2. Update Dockerfile if needed
+3. Update CloudFormation template if AWS services need updating
+4. Deploy changes using the update script
+
+### Scaling
+
+- ECS service auto-scales based on CPU/Memory utilization
+- Kafka partitions can be increased through CloudFormation parameters
+- Zookeeper ensemble can be expanded if needed
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. Connection Issues
+1. **Connection Issues**:
+   - Check security groups
+   - Verify VPC endpoints
+   - Check service health in ECS
 
-   - Check Kafka broker connectivity
-   - Verify SSL/TLS configuration
-   - Check security group settings
+2. **Authentication Failures**:
+   - Verify credentials in AWS Secrets Manager
+   - Check environment variables
+   - Review CloudWatch logs
 
-2. Authentication Failures
-
-   - Verify webhook credentials
-   - Check Kafka credentials
-   - Ensure proper IAM roles are configured
-
-3. Message Processing Failures
-   - Check application logs in CloudWatch
-   - Verify Kafka topic configuration
-   - Check message format and validation
+3. **Performance Issues**:
+   - Monitor CloudWatch metrics
+   - Check Kafka partition configuration
+   - Review container resource allocation
 
 ## Contributing
 
-1. Create a feature branch
-2. Make your changes
-3. Run tests and linting
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
 4. Submit a pull request
 
 ## License
 
-Proprietary - All rights reserved
+See LICENSE file for details.

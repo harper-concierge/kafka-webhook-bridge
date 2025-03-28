@@ -1,96 +1,104 @@
-version: '3'
-
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
-    platform: linux/arm64
+  nginx-proxy-kafka:
+    image: nginxproxy/nginx-proxy:1.7-alpine
+    container_name: nginx-proxy-kafka
     ports:
-      - "9181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_INIT_LIMIT: 5
-      ZOOKEEPER_SYNC_LIMIT: 2
-      ZOOKEEPER_SERVER_ID: 1
-      ZOOKEEPER_SERVERS: localhost:2888:3888
+      - "80:80"
+      - "29095:29095"
+      - "443:443"
     volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
+      - ${PWD}/nginx/certs:/etc/nginx/certs:delegated
+      - ${PWD}/nginx/toplevel.conf.d:/etc/nginx/toplevel.conf.d:delegated
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    restart: unless-stopped
+    environment:
+      TRUST_DOWNSTREAM_PROXY: false
+    networks:
+      webhook-network:
+        aliases:
+          - webhooks.harperconcierge.dev
+          - kafka.harperconcierge.dev
 
   kafka:
-    image: confluentinc/cp-kafka:7.3.0
+    image: bitnami/kafka:3.6
     platform: linux/arm64
     ports:
       - "9092:9092"
-      - "9292:29092"
-    depends_on:
-      - zookeeper
+      - "9093:9093"
+      - "9094:9094"
+      - "9095:9095"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9292
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9093
+      - KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094,PROXY://0.0.0.0:9095
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT
+      - KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://kafka:9092,EXTERNAL://localhost:9094,PROXY://kafka.harperconcierge.dev:29095
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
+      - KAFKA_CFG_SASL_ENABLED=true
+      - KAFKA_CFG_SASL_ENABLED_MECHANISMS=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL=PLAIN
+      - KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
+      - KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+      - KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+      - KAFKA_CFG_LISTENER_NAME_CONTROLLER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+      - KAFKA_CFG_LISTENER_NAME_PROXY_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
+      - BITNAMI_DEBUG=true
     volumes:
-      - kafka_data:/var/lib/kafka/data
-      - ./kafka/config:/etc/kafka
-      - ./kafka/config/tools-log4j.properties:/usr/bin/../config/tools-log4j.properties
+      - kafka_data:/bitnami
+    networks:
+      - webhook-network
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      test: ["CMD", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--command-config", "/tmp/client.properties", "--list"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.3.0
-    platform: linux/arm64
-    ports:
-      - "9081:8081"
-    depends_on:
-      - kafka
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
-      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
-
-  rest-proxy:
-    image: confluentinc/cp-kafka-rest:7.3.0
-    platform: linux/arm64
-    ports:
-      - "9082:8082"
-    depends_on:
-      - schema-registry
-    environment:
-      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_REST_HOST_NAME: rest-proxy
-      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
-      KAFKA_REST_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      retries: 3
+      start_period: 30s
+    command: >
+      bash -c "
+        echo 'security.protocol=SASL_PLAINTEXT
+        sasl.mechanism=PLAIN
+        sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=${KAFKA_BROKER_USERNAME} password=${KAFKA_BROKER_PASSWORD};' > /tmp/client.properties &&
+        /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh"
+    restart: always
 
   webhook:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
-      NODE_ENV: development
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_USERNAME: ${KAFKA_USERNAME:-kafka}
-      KAFKA_PASSWORD: ${KAFKA_PASSWORD:-kafka}
-      KAFKA_CLIENT_ID: kafka-webhook-bridge
-      KAFKA_SSL: "false"
-      PORT: 3000
-      WEBHOOK_USERNAME: ${WEBHOOK_USERNAME:-webhook}
-      WEBHOOK_PASSWORD: ${WEBHOOK_PASSWORD:-webhook}
+      - NODE_ENV=development
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_CLIENT_ID=kafka-webhook-bridge
+      - KAFKA_BROKER_USERNAME=${KAFKA_BROKER_USERNAME}
+      - KAFKA_BROKER_PASSWORD=${KAFKA_BROKER_PASSWORD}
+      - WEBHOOK_USERNAME=${WEBHOOK_USERNAME:-webhook}
+      - WEBHOOK_PASSWORD=${WEBHOOK_PASSWORD:-webhook}
+      - PORT=3000
+      - VIRTUAL_HOST=webhooks.harperconcierge.dev
+      - VIRTUAL_PORT=3000
     depends_on:
       kafka:
         condition: service_healthy
+    networks:
+      - webhook-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  webhook-network:
+    driver: bridge
 
 volumes:
   zookeeper_data:
