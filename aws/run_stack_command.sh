@@ -57,7 +57,7 @@ if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
 fi
 
 # Get the domain name from the HostedZoneId
-DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
+DOMAIN_NAME=$(aws route53 get-hosted-zone --id "$KAFKA_HOSTED_ZONE_ID" --query 'HostedZone.Name' --output text | sed 's/\.$//')
 FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN_NAME}"
 
 # Add domain name parameter
