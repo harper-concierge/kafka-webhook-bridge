@@ -7,7 +7,7 @@ const kafka = new Kafka({
   brokers: ['kafka.harperconcierge.dev:8443'],
   ssl: {
     rejectUnauthorized: false,
-    servername: 'kafka.harperconcierge.dev',
+    servername: 'kafka.harperconcierge.dev',  // matches wildcard cert
     minVersion: 'TLSv1.2',
     maxVersion: 'TLSv1.2'
   },

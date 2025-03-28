@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Default values
 ENV=${ENV:-local}
-WEBHOOK_URL=${WEBHOOK_URL:-https://webhooks.harperconcierge.dev:8443/webhook}
+WEBHOOK_URL=${WEBHOOK_URL:-https://webhooks.harperconcierge.dev:443/webhook}
 WEBHOOK_USERNAME=${WEBHOOK_USERNAME:-webhook}
 WEBHOOK_PASSWORD=${WEBHOOK_PASSWORD:-webhook}
 
