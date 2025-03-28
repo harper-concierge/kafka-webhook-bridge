@@ -62,6 +62,7 @@ FULL_DOMAIN="${DOMAIN_NAME}"
 # Add domain name parameter
 allParameters+=("ParameterKey=DomainName,ParameterValue='${FULL_DOMAIN}'")
 
+# Note: This matches the KafkaServiceDiscovery name
 INTERNAL_KAFKA_DOMAIN="kafka-internal.${STAGE}.webhooks-bridge.local"
 allParameters+=("ParameterKey=KafkaInternalDnsName,ParameterValue='${INTERNAL_KAFKA_DOMAIN}'")
 

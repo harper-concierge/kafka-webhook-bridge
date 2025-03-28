@@ -593,7 +593,7 @@ Resources:
             - !Ref PrivateSubnet2
           SecurityGroups:
             - !Ref KafkaSecurityGroup
-          AssignPublicIp: ENABLED
+          AssignPublicIp: DISABLED
       LoadBalancers:
         - ContainerName: kafka
           ContainerPort: 29092
@@ -622,7 +622,7 @@ Resources:
             - !Ref PrivateSubnet2
           SecurityGroups:
             - !Ref WebhookSecurityGroup
-          AssignPublicIp: ENABLED
+          AssignPublicIp: DISABLED
       LoadBalancers:
         - ContainerName: webhook
           ContainerPort: 8080
