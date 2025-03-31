@@ -504,6 +504,9 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthCheckPort: 9095
       HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 10
 
   # ECS Cluster
   ECSCluster:
@@ -645,17 +648,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - >-
-                set -x && 
-                echo "Running health check with client.properties:" &&
-                cat /tmp/client.properties &&
-                /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9094
-                --command-config /tmp/client.properties
-                --list || exit 1
+              - kafka-topics.sh --bootstrap-server localhost:9092 --list
             Interval: 30
-            Timeout: 30
-            Retries: 5
-            StartPeriod: 180
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           Environment:
             - Name: ALLOW_PLAINTEXT_LISTENER
               Value: "yes"
@@ -670,7 +667,7 @@ Resources:
             - Name: KAFKA_CFG_LISTENERS
               Value: !Sub "BROKER://0.0.0.0:9092,CONTROLLER://:9093,INTERNAL://0.0.0.0:9094,PROXY://0.0.0.0:9095"
             - Name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
-              Value: "BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT"
+              Value: "BROKER:PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT"
             - Name: KAFKA_CFG_ADVERTISED_LISTENERS
               Value: !Sub "BROKER://${KafkaInternalDnsName}:9092,INTERNAL://${KafkaInternalDnsName}:9094,PROXY://kafka.${DomainName}:${KafkaExternalPort}"
             - Name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
@@ -685,6 +682,14 @@ Resources:
               Value: "PLAIN"
             - Name: KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL
               Value: "PLAIN"
+            - Name: KAFKA_USERNAME
+              Value: !Ref KafkaUsername
+            - Name: KAFKA_PASSWORD
+              Value: !Ref KafkaPassword
+            - Name: KAFKA_CLIENT_USER
+              Value: !Ref KafkaUsername
+            - Name: KAFKA_CLIENT_PASSWORD
+              Value: !Ref KafkaPassword
             - Name: KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG
               Value: !Sub 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KafkaUsername}" password="${KafkaPassword}" user_${KafkaUsername}="${KafkaPassword}";'
             - Name: KAFKA_CFG_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG
@@ -740,19 +745,6 @@ Resources:
               echo "KafkaUsername: ${KafkaUsername}"
               echo "KafkaPassword: [hidden for security]"
               
-              # Create client.properties file for health checks
-              echo "Creating client.properties file..."
-              cat > /tmp/client.properties << EOF
-              security.protocol=SASL_PLAINTEXT
-              sasl.mechanism=PLAIN
-              sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KafkaUsername}" password="${KafkaPassword}" user_${KafkaUsername}="${KafkaPassword}";
-              EOF
-              
-              # Make file readable and print its contents for debugging
-              chmod 644 /tmp/client.properties
-              echo "Client properties file created:"
-              cat /tmp/client.properties
-              
               # Remove any stale lock files before starting Kafka
               echo "Cleaning up any stale lock files..."
               rm -f /bitnami/kafka/data/.lock
@@ -773,6 +765,7 @@ Resources:
       TaskDefinition: !Ref KafkaTaskDefinition
       DesiredCount: 1
       LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 300
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100

@@ -47,12 +47,6 @@ services:
       - KAFKA_CFG_SASL_MECHANISM=PLAIN
       - KAFKA_CLIENT_USERS=${KAFKA_BROKER_USERNAME}
       - KAFKA_CLIENT_PASSWORDS=${KAFKA_BROKER_PASSWORD}
-
-      # - KAFKA_CFG_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}";
-      # - KAFKA_CFG_LISTENER_NAME_BROKER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
-      # - KAFKA_CFG_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
-      # - KAFKA_CFG_LISTENER_NAME_CONTROLLER_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
-      # - KAFKA_CFG_LISTENER_NAME_PROXY_PLAIN_SASL_JAAS_CONFIG=org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_BROKER_USERNAME}" password="${KAFKA_BROKER_PASSWORD}" user_${KAFKA_BROKER_USERNAME}="${KAFKA_BROKER_PASSWORD}";
       - BITNAMI_DEBUG=true
     volumes:
       - kafka_data:/bitnami
