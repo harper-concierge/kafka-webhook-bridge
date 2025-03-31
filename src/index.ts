@@ -16,7 +16,7 @@ const logger = winston.createLogger({
 });
 
 // Environment variables
-const brokers = process.env.KAFKA_BROKERS?.split(',') ?? ['localhost:9092'];
+const brokers = process.env.KAFKA_BROKERS?.split(',') ?? ['kafka:9094'];
 const username = process.env.KAFKA_USERNAME ?? process.env.KAFKA_BROKER_USERNAME ?? 'webhook';
 const password = process.env.KAFKA_PASSWORD ?? process.env.KAFKA_BROKER_PASSWORD ?? 'webhook';
 const defaultTopic = process.env.DEFAULT_TOPIC || 'webhook-events';
