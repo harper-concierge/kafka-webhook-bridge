@@ -52,7 +52,7 @@ allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSW
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
-allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
+# allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
 
 # Add container image parameters only if they are set
 if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then

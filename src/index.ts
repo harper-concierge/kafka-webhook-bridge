@@ -37,13 +37,13 @@ const kafkaConfig = {
   }
 };
 
-logger.info('Kafka configuration', { 
-  kafkaConfig: { 
-    ...kafkaConfig, 
+logger.info('Kafka configuration', {
+  kafkaConfig: {
+    ...kafkaConfig,
     sasl: { ...kafkaConfig.sasl, password: '***' },
     brokers,
     defaultTopic
-  } 
+  }
 });
 
 const kafka = new Kafka(kafkaConfig);
@@ -60,11 +60,13 @@ const basicAuth = expressBasicAuth({
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+	console.log('/health - requested');
   res.json({ status: 'ok' });
 });
 
 // Documentation endpoint
 app.get('/', (req, res) => {
+	console.log('/ - requested');
   res.json({
     service: 'Kafka Webhook Bridge',
     description: 'Service that forwards webhook payloads to Kafka topics',
@@ -95,39 +97,40 @@ function validateTopicName(topicName: string): { valid: boolean; sanitized?: str
   if (!topicName || topicName.length === 0) {
     return { valid: false, error: 'Topic name cannot be empty' };
   }
-  
+
   // Check for invalid characters
   if (!topicName.match(/^[a-zA-Z0-9_-]+$/)) {
     return { valid: false, error: 'Topic name can only contain alphanumeric characters, underscores and hyphens' };
   }
-  
+
   // Check length
   if (topicName.length > 249) {
     return { valid: false, error: 'Topic name cannot exceed 249 characters' };
   }
-  
+
   // Sanitize the topic name to be safe
   const sanitized = topicName.replace(/^\./, '').replace(/\.$/, '');
-  
+
   return { valid: true, sanitized };
 }
 
 // Dynamic topic webhook endpoint
 app.all('/webhooks/:topicName/*', basicAuth, async (req, res) => {
+	console.log(req.path, 'Requested');
   try {
     const topicNameRaw = req.params.topicName;
-    
+
     // Validate and sanitize topic name
     const validation = validateTopicName(topicNameRaw);
     if (!validation.valid || !validation.sanitized) {
       return res.status(400).json({ error: validation.error });
     }
-    
+
     const topicName = validation.sanitized;
-    
+
     // Get the remaining path after /webhooks/topicName/
     const webhookPath = req.url.substring(`/webhooks/${topicNameRaw}/`.length);
-    
+
     // Create message with body if applicable
     const message: any = {
       method: req.method,
@@ -146,7 +149,7 @@ app.all('/webhooks/:topicName/*', basicAuth, async (req, res) => {
       topic: topicName,
       messages: [{ value: JSON.stringify(message) }]
     });
-    
+
     logger.info(`Message sent to Kafka topic '${topicName}'`, { method: req.method, path: webhookPath });
     res.json({ status: 'ok', topic: topicName, path: webhookPath, method: req.method });
   } catch (error: any) {
