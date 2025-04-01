@@ -11,7 +11,7 @@ The system consists of two main components:
 ### Security Model
 
 - **External Webhook Access**: HTTPS terminated at the load balancer (AWS) or nginx-proxy (local)
-- **Internal Communication**: 
+- **Internal Communication**:
   - Local: Plain text between services
   - AWS: SSL/TLS between services, terminated at the load balancer
 - **Authentication**:
@@ -74,7 +74,7 @@ The local setup uses nginx-proxy for SSL termination and routing. The configurat
 4. **Ports**:
    - `80`: HTTP traffic
    - `443`: HTTPS traffic
-   - `8443`: SSL-terminated Kafka traffic
+   - `29095`: SSL-terminated Kafka traffic
 
 5. **Environment Variables**:
    - `TRUST_DOWNSTREAM_PROXY=false`: Required for proper proxy handling and security
@@ -118,7 +118,7 @@ The local setup uses nginx-proxy for SSL termination and routing, with services 
 
 2. The services will be available at:
    - Webhook Proxy: https://webhooks.harperconcierge.dev
-   - Kafka (SSL): kafka.harperconcierge.dev:8443
+   - Kafka (SSL): kafka.harperconcierge.dev:29095
    - Kafka (Direct): localhost:9094
 
 ### Common Issues and Solutions
@@ -235,7 +235,7 @@ Note: These environment variables are used for local development only. In AWS, t
 
 #### Kafka Configuration (KRaft Mode)
 - **Platform**: linux/arm64 (for M1/M2 Macs)
-- **Ports**: 
+- **Ports**:
   - 9092: Internal communication (inter-broker)
   - 9093: Controller communication
   - 9094: External direct access (client)
@@ -253,7 +253,7 @@ Note: These environment variables are used for local development only. In AWS, t
 
   # Listener configuration
   KAFKA_CFG_LISTENERS=BROKER://:9092,CONTROLLER://:9093,EXTERNAL://0.0.0.0:9094,NGINX://0.0.0.0:9095
-  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://kafka:9092,EXTERNAL://localhost:9094,NGINX://kafka.harperconcierge.dev:8443
+  KAFKA_CFG_ADVERTISED_LISTENERS=BROKER://kafka:9092,EXTERNAL://localhost:9094,NGINX://kafka.harperconcierge.dev:29095
   KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=BROKER:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:SASL_PLAINTEXT,NGINX:SASL_PLAINTEXT
   KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
   KAFKA_CFG_INTER_BROKER_LISTENER_NAME=BROKER
@@ -271,12 +271,12 @@ Note: These environment variables are used for local development only. In AWS, t
   ```
 
 #### Nginx Stream Configuration
-- **Port**: 8443 (SSL)
+- **Port**: 29095 (SSL)
 - **SSL Configuration**:
   ```nginx
   stream {
       server {
-          listen 8443 ssl;
+          listen 29095 ssl;
           ssl_certificate /etc/nginx/certs/harperconcierge.dev.crt;
           ssl_certificate_key /etc/nginx/certs/harperconcierge.dev.key;
           ssl_protocols TLSv1.2 TLSv1.3;

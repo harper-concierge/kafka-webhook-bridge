@@ -176,14 +176,200 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
+  # VPC Endpoints for ECR and other AWS services
+  ECRAPIEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecr:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  ECRDKREndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecr:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:*'
+            Resource: '*'
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'logs:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ssm:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  ECSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecs:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  ECSAgentEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecs-agent
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecs:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  ECSTelemetryEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecs-telemetry
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 'ecs:*'
+            Resource: '*'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC Endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+
   # SSL Certificate
   WebhookCertificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
-      DomainName: !Ref DomainName
+      DomainName: !Sub "webhooks.${DomainName}"
       ValidationMethod: DNS
       DomainValidationOptions:
-        - DomainName: !Ref DomainName
+        - DomainName: !Sub "webhooks.${DomainName}"
+          HostedZoneId: !Ref HostedZoneId
+
+  KafkaCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "kafka.${DomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub "kafka.${DomainName}"
           HostedZoneId: !Ref HostedZoneId
 
   # Security Groups
@@ -216,9 +402,14 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 9092
+          FromPort: 9095
           ToPort: 9095
+          # CidrIp: !GetAtt VPC.CidrBlock  # Allow from VPC CIDR for NLB health checks
           SourceSecurityGroupId: !Ref NLBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 9094
+          ToPort: 9094
+          SourceSecurityGroupId: !Ref WebhookSecurityGroup
 
   WebhookSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -230,16 +421,6 @@ Resources:
           FromPort: 3000
           ToPort: 3000
           SourceSecurityGroupId: !Ref ALBSecurityGroup
-
-  # Allow webhook to connect to Kafka
-  WebhookToKafkaIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref KafkaSecurityGroup
-      IpProtocol: tcp
-      FromPort: 9092
-      ToPort: 9095
-      SourceSecurityGroupId: !Ref WebhookSecurityGroup
 
   # Application Load Balancer (for webhooks)
   WebhookLoadBalancer:
@@ -292,6 +473,8 @@ Resources:
       Name: !Sub ${Stage}-webhooks-kafka-nlb
       Scheme: internet-facing
       Type: network
+      SecurityGroups:
+        - !Ref NLBSecurityGroup
       Subnets:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
@@ -315,9 +498,12 @@ Resources:
       TargetType: ip
       VpcId: !Ref VPC
       HealthCheckEnabled: true
-      HealthCheckIntervalSeconds: 30
+      HealthCheckIntervalSeconds: 60
       HealthCheckPort: 9095
       HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 20
 
   # ECS Cluster
   ECSCluster:
@@ -337,7 +523,7 @@ Resources:
     Type: AWS::ServiceDiscovery::Service
     DependsOn: ServiceDiscoveryNamespace
     Properties:
-      Name: kafka
+      Name: kafka-internal
       NamespaceId: !Ref ServiceDiscoveryNamespace
       DnsConfig:
         DnsRecords:
@@ -347,7 +533,18 @@ Resources:
       HealthCheckCustomConfig:
         FailureThreshold: 1
 
-  # Additional DNS record for Kafka service
+  # Additional DNS records for services
+  WebhookDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "webhooks.${DomainName}."
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt WebhookLoadBalancer.DNSName
+        HostedZoneId: !GetAtt WebhookLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
   KafkaDNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -359,20 +556,58 @@ Resources:
         HostedZoneId: !GetAtt KafkaLoadBalancer.CanonicalHostedZoneID
         EvaluateTargetHealth: true
 
-  # Create an additional service discovery service for Kafka internal communication
-  KafkaInternalServiceDiscovery:
-    Type: AWS::ServiceDiscovery::Service
-    DependsOn: ServiceDiscoveryNamespace
+  # Add EFS Security Group after existing security groups
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      Name: kafka-internal
-      NamespaceId: !Ref ServiceDiscoveryNamespace
-      DnsConfig:
-        DnsRecords:
-          - Type: A
-            TTL: 30
-        RoutingPolicy: MULTIVALUE
-      HealthCheckCustomConfig:
-        FailureThreshold: 1
+      GroupDescription: Security group for EFS
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 10.100.0.0/16  # VPC CIDR block
+
+  # Add EFS FileSystem resources before Task Definitions
+  KafkaFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${Stage}-webhooks-kafka-data
+
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref KafkaFileSystem
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+      SubnetId: !Ref PrivateSubnet1
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref KafkaFileSystem
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+      SubnetId: !Ref PrivateSubnet2
+
+  KafkaAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref KafkaFileSystem
+      PosixUser:
+        Uid: "1001"
+        Gid: "1001"
+      RootDirectory:
+        Path: "/kafka-data"
+        CreationInfo:
+          OwnerUid: "1001"
+          OwnerGid: "1001"
+          Permissions: "775"
 
   # Task Definitions
   KafkaTaskDefinition:
@@ -386,17 +621,35 @@ Resources:
         - FARGATE
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      Volumes:
+        - Name: kafka-data
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref KafkaFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref KafkaAccessPoint
+              IAM: ENABLED
       ContainerDefinitions:
         - Name: kafka
           Image: !Ref KafkaImage
           Essential: true
           PortMappings:
+            - ContainerPort: 9092
+              Protocol: tcp
             - ContainerPort: 9093
               Protocol: tcp
             - ContainerPort: 9094
               Protocol: tcp
             - ContainerPort: 9095
               Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - kafka-topics.sh --bootstrap-server localhost:9092 --list
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
           Environment:
             - Name: ALLOW_PLAINTEXT_LISTENER
               Value: "yes"
@@ -409,31 +662,82 @@ Resources:
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
               Value: "1@127.0.0.1:9093"
             - Name: KAFKA_CFG_LISTENERS
-              Value: "CONTROLLER://:9093,INTERNAL://0.0.0.0:9094,BROKER://0.0.0.0:9095,PROXY://0.0.0.0:9096"
+              Value: "BROKER://0.0.0.0:9092,CONTROLLER://:9093,INTERNAL://0.0.0.0:9094,PROXY://0.0.0.0:9095"
             - Name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
-              Value: "CONTROLLER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,BROKER:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT"
+              Value: "BROKER:PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,PROXY:SASL_PLAINTEXT"
             - Name: KAFKA_CFG_ADVERTISED_LISTENERS
-              Value: !Sub "INTERNAL://${KafkaInternalDnsName}:9094,BROKER://${KafkaInternalDnsName}:9095,PROXY://kafka.${DomainName}:${KafkaExternalPort}"
+              Value: !Sub "BROKER://${KafkaInternalDnsName}:9092,INTERNAL://${KafkaInternalDnsName}:9094,PROXY://kafka.${DomainName}:${KafkaExternalPort}"
             - Name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
               Value: "CONTROLLER"
+            - Name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+              Value: "BROKER"
+            - Name: KAFKA_CFG_SASL_ENABLED
+              Value: "true"
             - Name: KAFKA_CFG_SASL_ENABLED_MECHANISMS
+              Value: "PLAIN"
+            - Name: KAFKA_CFG_SASL_MECHANISM
+              Value: "PLAIN"
+            - Name: KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL
               Value: "PLAIN"
             - Name: KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL
               Value: "PLAIN"
-            - Name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
-              Value: "BROKER"
-            - Name: KAFKA_CFG_LISTENER_NAME_INTERNAL_SASL_JAAS_CONFIG
-              Value: !Sub "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KafkaUsername}\" password=\"${KafkaPassword}\";"
-            - Name: KAFKA_CFG_LISTENER_NAME_BROKER_SASL_JAAS_CONFIG
-              Value: !Sub "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KafkaUsername}\" password=\"${KafkaPassword}\";"
-            - Name: KAFKA_CFG_LISTENER_NAME_PROXY_SASL_JAAS_CONFIG
-              Value: !Sub "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${KafkaUsername}\" password=\"${KafkaPassword}\";"
+            - Name: KAFKA_CFG_SECURITY_PROTOCOL
+              Value: "SASL_PLAINTEXT"
+            - Name: KAFKA_CLIENT_USERS
+              Value: !Ref KafkaUsername
+            - Name: KAFKA_CLIENT_PASSWORDS
+              Value: !Ref KafkaPassword
+            - Name: BITNAMI_DEBUG
+              Value: "true"
+            # Additional AWS-specific configurations
+            - Name: KAFKA_CFG_LOG_DIRS
+              Value: "/bitnami/kafka/data"
+            - Name: KAFKA_KRAFT_CLUSTER_ID
+              Value: "DkehYBuuTnKBBK2WrZx3yw"
+            - Name: KAFKA_CFG_CONTROLLED_SHUTDOWN_ENABLE
+              Value: "true"
+            - Name: KAFKA_CFG_AUTO_LEADER_REBALANCE_ENABLE
+              Value: "true"
+            - Name: KAFKA_CFG_DELETE_TOPIC_ENABLE
+              Value: "true"
+            - Name: KAFKA_HEAP_OPTS
+              Value: "-Xmx512m -Xms256m"
+            - Name: KAFKA_CFG_FILE_DELETE_DELAY_MS
+              Value: "1000"
+            - Name: KAFKA_CFG_CONTROLLED_SHUTDOWN_MAX_RETRIES
+              Value: "3"
+            - Name: KAFKA_CFG_CONTROLLED_SHUTDOWN_RETRY_BACKOFF_MS
+              Value: "5000"
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: !Ref CloudWatchLogsGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: kafka
+          MountPoints:
+            - SourceVolume: kafka-data
+              ContainerPath: "/bitnami/kafka"
+              ReadOnly: false
+          Ulimits:
+            - Name: nofile
+              SoftLimit: 65536
+              HardLimit: 65536
+          EntryPoint:
+            - /bin/bash
+            - -c
+            - !Sub |
+              # Debug: Print environment variables
+              echo "Environment variables:"
+              echo "KafkaUsername: ${KafkaUsername}"
+              echo "KafkaPassword: [hidden for security]"
+              
+              # Remove any stale lock files before starting Kafka
+              echo "Cleaning up any stale lock files..."
+              rm -f /bitnami/kafka/data/.lock
+              
+              # Start Kafka with the regular command
+              echo "Starting Kafka server..."
+              /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh
 
   # ECS Services
   KafkaService:
@@ -441,13 +745,19 @@ Resources:
     DependsOn:
       - KafkaListener
       - KafkaServiceDiscovery
-      - KafkaInternalServiceDiscovery
     Properties:
       ServiceName: !Sub ${Stage}-webhooks-kafka
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref KafkaTaskDefinition
       DesiredCount: 1
       LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 300
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
       NetworkConfiguration:
         AwsvpcConfiguration:
           Subnets:
@@ -462,7 +772,6 @@ Resources:
           ContainerPort: 9095
       ServiceRegistries:
         - RegistryArn: !GetAtt KafkaServiceDiscovery.Arn
-        - RegistryArn: !GetAtt KafkaInternalServiceDiscovery.Arn
 
   WebhookTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -477,7 +786,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: webhook
-          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/webhook-bridge:${WebhookImageTag}
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/kafka-webhook-bridge:${WebhookImageTag}
           Essential: true
           PortMappings:
             - ContainerPort: 3000
@@ -489,9 +798,9 @@ Resources:
               Value: !Ref WebhookPassword
             - Name: KAFKA_BROKERS
               Value: !Sub "${KafkaInternalDnsName}:9094"
-            - Name: KAFKA_USERNAME
+            - Name: KAFKA_BROKER_USERNAME
               Value: !Ref KafkaUsername
-            - Name: KAFKA_PASSWORD
+            - Name: KAFKA_BROKER_PASSWORD
               Value: !Ref KafkaPassword
           LogConfiguration:
             LogDriver: awslogs
@@ -505,6 +814,7 @@ Resources:
     DependsOn:
       - WebhookListener
       - WebhookTaskDefinition
+      - KafkaService
     Properties:
       ServiceName: !Sub ${Stage}-webhooks-service
       Cluster: !Ref ECSCluster
@@ -537,6 +847,18 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: EFSAccessForTaskExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: 
+                  - !GetAtt KafkaFileSystem.Arn
+                  - !Sub "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/${KafkaAccessPoint}"
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -548,6 +870,18 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EFSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: 
+                  - !GetAtt KafkaFileSystem.Arn
+                  - !Sub "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/${KafkaAccessPoint}"
 
   # CloudWatch Logs
   CloudWatchLogsGroup:
@@ -556,6 +890,16 @@ Resources:
       LogGroupName: !Sub /ecs/${Stage}-webhooks
       RetentionInDays: 30
 
+  # Allow Kafka security group to access EFS
+  KafkaToEFSIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EFSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 2049
+      ToPort: 2049
+      SourceSecurityGroupId: !Ref KafkaSecurityGroup
+
 Outputs:
   WebhookEndpoint:
     Description: Webhook endpoint URL
@@ -563,9 +907,18 @@ Outputs:
   KafkaEndpoint:
     Description: Kafka endpoint URL
     Value: !Sub kafka.${DomainName}:${KafkaExternalPort}
-  LoadBalancerDNS:
-    Description: Load Balancer DNS name
+  WebhookLoadBalancerDNS:
+    Description: Webhook Load Balancer DNS name
     Value: !GetAtt WebhookLoadBalancer.DNSName
-  KafkaDNSRecord:
-    Description: Kafka DNS record
-    Value: !Sub "kafka.${DomainName}." 
+  KafkaLoadBalancerDNS:
+    Description: Kafka Load Balancer DNS name
+    Value: !GetAtt KafkaLoadBalancer.DNSName
+  WebhookDNSName:
+    Description: Webhook DNS name
+    Value: !Sub "webhooks.${DomainName}"
+  KafkaDNSName:
+    Description: Kafka DNS name
+    Value: !Sub "kafka.${DomainName}"
+  KafkaFileSystemId:
+    Description: Kafka EFS File System ID
+    Value: !Ref KafkaFileSystem 

@@ -5,6 +5,7 @@
 HOST=${WEBHOOK_HOST:-"localhost:3000"}
 USERNAME=${WEBHOOK_USERNAME:-"admin"}
 PASSWORD=${WEBHOOK_PASSWORD:-"admin-secret"}
+PROTOCOL="https"
 AUTH_HEADER="Authorization: Basic $(echo -n "$USERNAME:$PASSWORD" | base64)"
 
 # Colors for output
@@ -20,7 +21,7 @@ send_request() {
   local topic=$2
   local path=$3
   local payload=$4
-  local url="https://$HOST/webhooks/$topic/$path"
+  local url="${PROTOCOL}://$HOST/webhooks/$topic/$path"
 
   echo -e "${BLUE}Sending $method request to topic '$topic' with path '$path'${NC}"
 
@@ -51,13 +52,13 @@ send_request() {
 }
 
 # Main test sequence
-echo -e "${BLUE}=== Testing Webhook Service at $HOST ===${NC}"
+echo -e "${BLUE}=== Testing Webhook Service at ${PROTOCOL}://$HOST ===${NC}"
 
 # Test various topics and methods
 echo -e "${BLUE}Testing with different topics and HTTP methods...${NC}"
 
 # GitHub webhook simulation
-send_request "POST" "github-events" "push" '{
+send_request "POST" "harper-concierge-dev" "return/create" '{
   "event": "push",
   "ref": "refs/heads/main",
   "repository": {
@@ -73,7 +74,7 @@ send_request "POST" "github-events" "push" '{
 }'
 
 # Stripe webhook simulation
-send_request "POST" "stripe-events" "charge-succeeded" '{
+send_request "POST" "harper-centra-dev" "refund/create" '{
   "event": "charge.succeeded",
   "data": {
     "object": {
@@ -85,17 +86,6 @@ send_request "POST" "stripe-events" "charge-succeeded" '{
 }'
 
 # Test with GET method
-send_request "GET" "monitoring" "status" ''
-
-# Test with PUT method
-send_request "PUT" "user-updates" "profile/123" '{
-  "event": "profile_update",
-  "user_id": 123,
-  "name": "John Doe",
-  "email": "john@example.com"
-}'
-
-# Test with DELETE method
-send_request "DELETE" "user-events" "account/456" ''
+send_request "GET" "harper-magento-dev" "fulfilment/create" ''
 
 echo -e "${BLUE}=== Testing Complete ===${NC}"
