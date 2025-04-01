@@ -2,7 +2,7 @@ const { Kafka } = require('kafkajs');
 const chalk = require('chalk');
 
 // Get topics from environment or use default list
-const topics = (process.env.KAFKA_TOPICS || 'webhook-events,github-events,stripe-events,monitoring,user-events,user-updates').split(',');
+const topics = (process.env.KAFKA_TOPICS || 'harper-concierge-dev, harper-centra-dev, harper-bigcommerce-dev, harper-salesforce-dev, harper-magento-dev').split(',');
 const kafkaPort = process.env.KAFKA_EXTERNAL_PORT || '29095';
 const kafkaBroker = process.env.KAFKA_BROKER || 'kafka.harperconcierge.dev';
 
@@ -64,26 +64,26 @@ async function consumeMessages() {
         try {
           const value = message.value.toString();
           const parsedValue = JSON.parse(value);
-          
+
           // Print message header with topic and partition info
           console.log('\n' + '='.repeat(80));
           console.log(chalk.cyan(`TOPIC: ${chalk.bold(topic)} | PARTITION: ${partition} | OFFSET: ${message.offset}`));
           console.log(chalk.cyan(`TIMESTAMP: ${new Date(parseInt(message.timestamp)).toISOString()}`));
           console.log('-'.repeat(80));
-          
+
           // Print HTTP method and path if available
           if (parsedValue.method) {
             console.log(chalk.magenta(`METHOD: ${chalk.bold(parsedValue.method)}`));
           }
-          
+
           if (parsedValue.path) {
             console.log(chalk.magenta(`PATH: ${chalk.bold(parsedValue.path)}`));
           }
-          
+
           if (parsedValue.event) {
             console.log(chalk.magenta(`EVENT: ${chalk.bold(parsedValue.event)}`));
           }
-          
+
           // Print message body
           console.log(chalk.yellow('MESSAGE BODY:'));
           if (parsedValue.body) {
@@ -94,7 +94,7 @@ async function consumeMessages() {
             const { headers, method, path, timestamp, ...rest } = parsedValue;
             console.log(chalk.white(formatJson(rest)));
           }
-          
+
           console.log('='.repeat(80));
         } catch (parseError) {
           console.error(chalk.red('Error parsing message:'), parseError);
