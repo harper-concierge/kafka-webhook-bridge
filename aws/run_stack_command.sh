@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Exit on error
 set -e
 
 # Check required arguments
@@ -42,12 +43,16 @@ allParameters=()
 
 echo "Setting Env Vars"
 
+# Generate deployment timestamp
+DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
 # Add parameters from environment variables
 allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_BROKER_USERNAME}'")
 allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSWORD}'")
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
+allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
 
 # Add container image parameters only if they are set
 if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
@@ -70,9 +75,9 @@ allParameters+=("ParameterKey=KafkaInternalDnsName,ParameterValue='${INTERNAL_KA
 if [ "$command" = "update-stack" ]; then
     if [ -z "$IMAGE_TAG" ]; then
         # Get current image tag from running task
-        task_arn=$(aws ecs list-tasks --cluster "kafka-webhook-bridge-cluster" --desired-status RUNNING --family kafka-webhook-bridge --query 'taskArns[0]' --output text)
+        task_arn=$(aws ecs list-tasks --cluster "${STAGE}-webhooks-cluster" --desired-status RUNNING --family "${STAGE}-webhooks-service" --query 'taskArns[0]' --output text)
         if [ -n "$task_arn" ]; then
-            task_definition_arn=$(aws ecs describe-tasks --cluster "kafka-webhook-bridge-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
+            task_definition_arn=$(aws ecs describe-tasks --cluster "${STAGE}-webhooks-cluster" --tasks "$task_arn" --query "tasks[0].taskDefinitionArn" --output text)
             IMAGE_TAG=$(aws ecs describe-task-definition --task-definition "$task_definition_arn" --query "taskDefinition.containerDefinitions[0].image" --output text | awk -F ':' '{print $NF}')
             echo "Using current image tag: $IMAGE_TAG"
         else
@@ -96,7 +101,6 @@ fi
 
 # Deploy the stack
 # shellcheck disable=SC2086
-
 aws cloudformation "$command" \
     --stack-name "kafka-webhook-bridge-stack" \
     --template-body file://kafka-webhook-bridge-stack.yml \
