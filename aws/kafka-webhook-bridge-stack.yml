@@ -6,7 +6,7 @@ Parameters:
     Type: String
     Description: The stage this stack is for (dev, staging, prod)
   DeploymentTimestamp:
-    Type: String
+    Type: Number
     Description: Timestamp of the deployment, used for unique broker IDs
   ContainerCpu:
     Type: Number
