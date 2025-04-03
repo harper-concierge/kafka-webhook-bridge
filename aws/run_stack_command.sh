@@ -46,12 +46,17 @@ echo "Setting Env Vars"
 # Generate deployment timestamp
 DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d%H%M%S)
 
+# Generate broker_id based on deployment timestamp (ensuring it's under 2147483647)
+# Using last 9 digits of timestamp to ensure we stay under the limit
+BROKER_ID=$(echo $DEPLOYMENT_TIMESTAMP | tail -c 9)
+
 # Add parameters from environment variables
 allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_BROKER_USERNAME}'")
 allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSWORD}'")
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
+allParameters+=("ParameterKey=BrokerId,ParameterValue='${BROKER_ID}'")
 allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
 
 # Add container image parameters only if they are set

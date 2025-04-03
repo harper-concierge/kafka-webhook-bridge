@@ -8,6 +8,9 @@ Parameters:
   DeploymentTimestamp:
     Type: Number
     Description: Timestamp of the deployment, used for unique broker IDs
+  BrokerId:
+    Type: Number
+    Description: Unique broker ID for Kafka (must be less than 2147483647)
   ContainerCpu:
     Type: Number
     Default: 512
@@ -665,6 +668,8 @@ Resources:
               Value: "broker,controller"
             - Name: KAFKA_CFG_NODE_ID
               Value: !Sub "${DeploymentTimestamp}"
+            - Name: KAFKA_BROKER_ID
+              Value: !Ref BrokerId
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
               Value: "1@127.0.0.1:9093"
             - Name: KAFKA_CFG_LISTENERS
