@@ -44,7 +44,7 @@ allParameters=()
 echo "Setting Env Vars"
 
 # Generate deployment timestamp
-DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d%H%M%S)
 
 # Add parameters from environment variables
 allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_BROKER_USERNAME}'")
@@ -52,7 +52,7 @@ allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSW
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
-# allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
+allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
 
 # Add container image parameters only if they are set
 if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then

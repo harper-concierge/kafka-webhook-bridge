@@ -5,6 +5,9 @@ Parameters:
   Stage:
     Type: String
     Description: The stage this stack is for (dev, staging, prod)
+  DeploymentTimestamp:
+    Type: String
+    Description: Timestamp of the deployment, used for unique broker IDs
   ContainerCpu:
     Type: Number
     Default: 512
@@ -484,10 +487,13 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref KafkaLoadBalancer
       Port: !Ref KafkaExternalPort
-      Protocol: TCP
+      Protocol: TLS
+      Certificates:
+        - CertificateArn: !Ref KafkaCertificate
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref KafkaTargetGroup
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
 
   KafkaTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -658,7 +664,7 @@ Resources:
             - Name: KAFKA_CFG_PROCESS_ROLES
               Value: "broker,controller"
             - Name: KAFKA_CFG_NODE_ID
-              Value: "1"
+              Value: !Sub "${DeploymentTimestamp}"
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
               Value: "1@127.0.0.1:9093"
             - Name: KAFKA_CFG_LISTENERS
@@ -689,6 +695,8 @@ Resources:
               Value: !Ref KafkaPassword
             - Name: BITNAMI_DEBUG
               Value: "true"
+            - Name: KAFKA_CFG_AUTO_OFFSET_RESET
+              Value: "earliest"
             # Additional AWS-specific configurations
             - Name: KAFKA_CFG_LOG_DIRS
               Value: "/bitnami/kafka/data"
@@ -730,11 +738,11 @@ Resources:
               echo "Environment variables:"
               echo "KafkaUsername: ${KafkaUsername}"
               echo "KafkaPassword: [hidden for security]"
-              
+
               # Remove any stale lock files before starting Kafka
               echo "Cleaning up any stale lock files..."
               rm -f /bitnami/kafka/data/.lock
-              
+
               # Start Kafka with the regular command
               echo "Starting Kafka server..."
               /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh
@@ -856,7 +864,7 @@ Resources:
                 Action:
                   - elasticfilesystem:ClientMount
                   - elasticfilesystem:ClientWrite
-                Resource: 
+                Resource:
                   - !GetAtt KafkaFileSystem.Arn
                   - !Sub "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/${KafkaAccessPoint}"
 
@@ -879,7 +887,7 @@ Resources:
                 Action:
                   - elasticfilesystem:ClientMount
                   - elasticfilesystem:ClientWrite
-                Resource: 
+                Resource:
                   - !GetAtt KafkaFileSystem.Arn
                   - !Sub "arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:access-point/${KafkaAccessPoint}"
 
@@ -921,4 +929,4 @@ Outputs:
     Value: !Sub "kafka.${DomainName}"
   KafkaFileSystemId:
     Description: Kafka EFS File System ID
-    Value: !Ref KafkaFileSystem 
+    Value: !Ref KafkaFileSystem
