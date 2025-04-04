@@ -11,6 +11,10 @@ Parameters:
   BrokerId:
     Type: Number
     Description: Unique broker ID for Kafka (must be less than 2147483647)
+  PreviousBrokerId:
+    Type: Number
+    Description: Previous broker ID from the last deployment
+    Default: 1
   ContainerCpu:
     Type: Number
     Default: 512
@@ -53,9 +57,6 @@ Parameters:
     Type: String
     Default: bitnami/kafka:3.7
     Description: Docker image for Kafka
-
-Conditions:
-  HasPreviousBrokerId: !Not [!Equals [!ImportValue !Sub "${Stage}-kafka-webhook-bridge-PreviousBrokerId", ""]]
 
 Resources:
   # VPC and Network Configuration
@@ -671,12 +672,6 @@ Resources:
               Value: "broker,controller"
             - Name: KAFKA_CFG_NODE_ID
               Value: !Ref BrokerId
-            - Name: PreviousBrokerId
-              Value: !If
-                - HasPreviousBrokerId
-                - Fn::ImportValue:
-                    !Sub "${Stage}-kafka-webhook-bridge-PreviousBrokerId"
-                - "1"
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
               Value: !Sub "${BrokerId}@127.0.0.1:9093,${PreviousBrokerId}@127.0.0.1:9093"
             - Name: KAFKA_CFG_LISTENERS
@@ -945,5 +940,3 @@ Outputs:
   PreviousBrokerId:
     Description: Previous broker ID used in the deployment
     Value: !Ref BrokerId
-    Export:
-      Name: !Sub "${Stage}-kafka-webhook-bridge-PreviousBrokerId"
