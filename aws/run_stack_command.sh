@@ -46,31 +46,14 @@ echo "Setting Env Vars"
 # Generate deployment timestamp
 DEPLOYMENT_TIMESTAMP=$(date +%Y%m%d%H%M%S)
 
-# Generate broker_id based on deployment timestamp (ensuring it's under 2147483647)
-# Using last 9 digits of timestamp to ensure we stay under the limit
-BROKER_ID=$(echo $DEPLOYMENT_TIMESTAMP | tail -c 9)
-
-# Get previous broker ID from the current stack if it exists
-if [ "$command" = "update-stack" ]; then
-    PREVIOUS_BROKER_ID=$(aws cloudformation describe-stacks \
-        --stack-name kafka-webhook-bridge-stack \
-        --query "Stacks[0].Outputs[?OutputKey=='PreviousBrokerId'].OutputValue" \
-        --output text)
-    echo "Using previous broker ID: $PREVIOUS_BROKER_ID"
-fi
-
 # Add parameters from environment variables
 allParameters+=("ParameterKey=KafkaUsername,ParameterValue='${KAFKA_BROKER_USERNAME}'")
 allParameters+=("ParameterKey=KafkaPassword,ParameterValue='${KAFKA_BROKER_PASSWORD}'")
 allParameters+=("ParameterKey=WebhookUsername,ParameterValue='${WEBHOOK_USERNAME}'")
 allParameters+=("ParameterKey=WebhookPassword,ParameterValue='${WEBHOOK_PASSWORD}'")
 allParameters+=("ParameterKey=HostedZoneId,ParameterValue='${KAFKA_HOSTED_ZONE_ID}'")
-allParameters+=("ParameterKey=BrokerId,ParameterValue='${BROKER_ID}'")
+allParameters+=("ParameterKey=BrokerId,ParameterValue='1'")
 allParameters+=("ParameterKey=DeploymentTimestamp,ParameterValue='${DEPLOYMENT_TIMESTAMP}'")
-if [ -n "${PREVIOUS_BROKER_ID:-}" ]; then
-  	echo "Adding PreviousBrokerId ${PREVIOUS_BROKER_ID}"
-	allParameters+=("ParameterKey=PreviousBrokerId,ParameterValue='${PREVIOUS_BROKER_ID}'")
-fi
 
 # Add container image parameters only if they are set
 if [ -n "${KAFKA_CONTAINER_IMAGE:-}" ]; then
@@ -131,3 +114,4 @@ aws cloudformation "$command" \
 #echo "Waiting for stack update to finish..."
 #aws cloudformation wait stack-update-complete --stack-name "kafka-webhook-bridge-stack"
 #echo "Stack update finished."
+

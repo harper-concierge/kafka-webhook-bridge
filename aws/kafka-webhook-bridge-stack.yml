@@ -11,9 +11,6 @@ Parameters:
   BrokerId:
     Type: Number
     Description: Unique broker ID for Kafka (must be less than 2147483647)
-  PreviousBrokerId:
-    Type: Number
-    Description: Previous broker ID from the last deployment
     Default: 1
   ContainerCpu:
     Type: Number
@@ -673,7 +670,7 @@ Resources:
             - Name: KAFKA_CFG_NODE_ID
               Value: !Ref BrokerId
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
-              Value: !Sub "${BrokerId}@127.0.0.1:9093,${PreviousBrokerId}@127.0.0.1:9093"
+              Value: !Sub "${BrokerId}@127.0.0.1:9093"
             - Name: KAFKA_CFG_LISTENERS
               Value: "BROKER://0.0.0.0:9092,CONTROLLER://:9093,INTERNAL://0.0.0.0:9094,PROXY://0.0.0.0:9095"
             - Name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
@@ -768,8 +765,8 @@ Resources:
       LaunchType: FARGATE
       HealthCheckGracePeriodSeconds: 300
       DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true
