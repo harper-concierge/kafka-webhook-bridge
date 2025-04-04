@@ -667,8 +667,6 @@ Resources:
             - Name: KAFKA_CFG_PROCESS_ROLES
               Value: "broker,controller"
             - Name: KAFKA_CFG_NODE_ID
-              Value: !Sub "${DeploymentTimestamp}"
-            - Name: KAFKA_BROKER_ID
               Value: !Ref BrokerId
             - Name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
               Value: "1@127.0.0.1:9093"
