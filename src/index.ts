@@ -56,6 +56,30 @@ logger.info('Kafka configuration', {
 const kafka = new Kafka(kafkaConfig);
 const producer = kafka.producer();
 
+// Handle graceful shutdown
+const shutdown = async (signal: string) => {
+  logger.info(`Received ${signal}, starting graceful shutdown...`);
+  
+  try {
+    // Disconnect producer
+    await producer.disconnect();
+    logger.info('Kafka producer disconnected');
+    
+    // Close server
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Set up signal handlers
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 const app = express();
 app.use(express.json());
 
@@ -287,20 +311,14 @@ app.all('/webhooks/:topicName/*', basicAuth, async (req, res) => {
 
 // Start server
 const port = process.env.PORT || 3000;
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   try {
+    // Connect to Kafka
     await producer.connect();
-    logger.info(`Webhook service listening on port ${port}`);
+    logger.info(`Server running on port ${port}`);
     logger.info('Connected to Kafka');
   } catch (error) {
-    logger.error('Failed to connect to Kafka', { error });
+    logger.error('Failed to start server:', error);
     process.exit(1);
   }
-});
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received, closing connections');
-  await producer.disconnect();
-  process.exit(0);
 });
