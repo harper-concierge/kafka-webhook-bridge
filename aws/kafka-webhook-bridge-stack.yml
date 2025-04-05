@@ -743,9 +743,11 @@ Resources:
               echo "KafkaUsername: ${KafkaUsername}"
               echo "KafkaPassword: [hidden for security]"
 
-              # Remove any stale lock files before starting Kafka
-              echo "Cleaning up any stale lock files..."
+              # Remove any stale lock files and broker registration metadata
+              echo "Cleaning up stale files..."
               rm -f /bitnami/kafka/data/.lock
+              rm -rf /bitnami/kafka/data/meta.properties
+              rm -rf /bitnami/kafka/data/__cluster_metadata-0
 
               # Start Kafka with the regular command
               echo "Starting Kafka server..."
