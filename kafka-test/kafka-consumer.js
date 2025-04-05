@@ -2,30 +2,33 @@ const { Kafka } = require('kafkajs');
 const chalk = require('chalk');
 
 // Get topics from environment or use default list
-const topics = (process.env.KAFKA_TOPICS || 'harper-concierge-dev, harper-centra-dev, harper-bigcommerce-dev, harper-salesforce-dev, harper-magento-dev').split(',');
-const kafkaPort = process.env.KAFKA_EXTERNAL_PORT || '29095';
-const kafkaBroker = process.env.KAFKA_BROKER || 'kafka.harperconcierge.dev';
+const topics = (process.env.KAFKA_TOPICS || 'shopify,stripe,centra,bigcommerce').split(',');
+const kafkaBrokerUrl = process.env.KAFKA_BROKER_URL || 'kafka.harperconcierge.dev:29095';
+const kafkaUsername = process.env.KAFKA_BROKER_USERNAME || 'webhook';
+const kafkaPassword = process.env.KAFKA_BROKER_PASSWORD || 'webhook';
 
 console.log(chalk.blue(`Attempting to connect to Kafka at ${kafkaBroker}:${kafkaPort}`));
 console.log(chalk.blue(`Will subscribe to topics: ${topics.join(', ')}`));
+console.log(chalk.blue(`Using username: ${kafkaUsername}`));
+const servername = kafkaBrokerUrl.split(':')[0];
 
 // Create the kafka instance
 const kafka = new Kafka({
   clientId: 'kafka-consumer',
-  brokers: [`${kafkaBroker}:${kafkaPort}`],
+  brokers: [kafkaBrokerUrl],
   ssl: {
-    rejectUnauthorized: false,
-    servername: kafkaBroker,  // matches wildcard cert
+    rejectUnauthorized: true,
+    servername,
     minVersion: 'TLSv1.2',
     maxVersion: 'TLSv1.2'
   },
   sasl: {
     mechanism: 'plain',
-    username: process.env.KAFKA_BROKER_USERNAME || 'webhook',
-    password: process.env.KAFKA_BROKER_PASSWORD || 'webhook',
+    username: kafkaUsername,
+    password: kafkaPassword,
   },
-  connectionTimeout: 3000,
-  authenticationTimeout: 3000,
+  connectionTimeout: 5000,
+  authenticationTimeout: 5000,
   retry: {
     initialRetryTime: 100,
     retries: 3
@@ -44,16 +47,54 @@ function formatJson(json) {
   }
 }
 
+async function checkTopics() {
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    console.log(chalk.blue('\nChecking topics...'));
+
+    const existingTopics = await admin.listTopics();
+    console.log(chalk.blue('Existing topics:', existingTopics.join(', ')));
+
+    for (const topic of topics) {
+      if (existingTopics.includes(topic)) {
+        const topicMetadata = await admin.fetchTopicMetadata({ topics: [topic] });
+        const metadata = topicMetadata.topics[0];
+        console.log(chalk.green(`\nTopic ${chalk.yellow(topic)} exists:`));
+        console.log(chalk.white(`  Partitions: ${metadata.partitions.length}`));
+        console.log(chalk.white(`  Replication Factor: ${metadata.partitions[0].replicas.length}`));
+
+        // Get topic offsets
+        const offsets = await admin.fetchTopicOffsets(topic);
+        console.log(chalk.white('  Partitions:'));
+        offsets.forEach(offset => {
+          console.log(chalk.white(`    Partition ${offset.partition}:`));
+          console.log(chalk.white(`      Latest: ${offset.high}`));
+          console.log(chalk.white(`      Earliest: ${offset.low}`));
+          console.log(chalk.white(`      Messages: ${offset.high - offset.low}`));
+        });
+      } else {
+        console.log(chalk.yellow(`\nTopic ${chalk.red(topic)} does not exist`));
+      }
+    }
+  } catch (error) {
+    console.error(chalk.red('Error checking topics:'), error);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
 async function consumeMessages() {
   const consumer = kafka.consumer({ groupId: 'test-group' });
 
   try {
     // Connect to the broker
     await consumer.connect();
-    console.log(chalk.green('Connected to Kafka broker'));
+    console.log(chalk.green('\nConnected to Kafka broker'));
 
     // Subscribe to all specified topics
     for (const topic of topics) {
+      console.log(chalk.green(`Subscribing to ${chalk.yellow(topic)} topic`));
       await consumer.subscribe({ topic, fromBeginning: true });
       console.log(chalk.green(`Subscribed to ${chalk.yellow(topic)} topic`));
     }
@@ -104,6 +145,13 @@ async function consumeMessages() {
     });
   } catch (error) {
     console.error(chalk.red('Error:'), error);
+    if (error.name === 'KafkaJSSASLAuthenticationError') {
+      console.error(chalk.red('Authentication failed. Please check your credentials:'));
+      console.error(chalk.yellow('Username:'), kafkaUsername);
+      console.error(chalk.yellow('Password:'), kafkaPassword ? '[hidden]' : 'not set');
+      console.error(chalk.yellow('Broker:'), `${kafkaBroker}:${kafkaPort}`);
+    }
+    process.exit(1);
   }
 }
 
@@ -115,7 +163,9 @@ process.on('SIGINT', async () => {
 
 // Run the consumer
 console.log(chalk.blue('Starting Kafka consumer...'));
-consumeMessages().catch(error => {
+checkTopics().then(() => {
+  return consumeMessages();
+}).catch(error => {
   console.error(chalk.red('Fatal error:'), error);
   process.exit(1);
 });

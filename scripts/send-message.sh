@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to test the webhook service with various topics and HTTP methods
+# Script to test the webhook service with various e-commerce platform webhooks
 
 # Configuration
 HOST=${WEBHOOK_HOST:-"localhost:3000"}
@@ -42,7 +42,7 @@ send_request() {
 
   # Check if successful
   if echo "$response" | grep -q '"status":"ok"'; then
-    echo -e "${GREEN}Success!${NC} Message sent to Kafka"
+    echo -e "${GREEN}Success!${NC} Message sent to Kafka topic '$topic'"
     echo -e "${YELLOW}Response:${NC} $response"
   else
     echo -e "${RED}Error!${NC} Failed to send message"
@@ -52,40 +52,166 @@ send_request() {
 }
 
 # Main test sequence
-echo -e "${BLUE}=== Testing Webhook Service at ${PROTOCOL}://$HOST ===${NC}"
+echo -e "${BLUE}=== Testing E-commerce Webhook Service at ${PROTOCOL}://$HOST ===${NC}"
 
-# Test various topics and methods
-echo -e "${BLUE}Testing with different topics and HTTP methods...${NC}"
-
-# GitHub webhook simulation
-send_request "POST" "harper-concierge-dev" "return/create" '{
-  "event": "push",
-  "ref": "refs/heads/main",
-  "repository": {
-    "name": "test-repo",
-    "full_name": "user/test-repo"
-  },
-  "commits": [
+# Shopify Order Creation
+echo -e "${BLUE}Testing Shopify Order Creation...${NC}"
+send_request "POST" "shopify" "orders/create" '{
+  "id": 123456789,
+  "email": "customer@example.com",
+  "created_at": "2024-03-20T10:00:00Z",
+  "total_price": "99.99",
+  "currency": "USD",
+  "line_items": [
     {
-      "id": "abc123",
-      "message": "Test commit"
+      "title": "Product Name",
+      "quantity": 1,
+      "price": "99.99"
     }
   ]
 }'
 
-# Stripe webhook simulation
-send_request "POST" "harper-centra-dev" "refund/create" '{
-  "event": "charge.succeeded",
+# Stripe Payment Success
+echo -e "${BLUE}Testing Stripe Payment Success...${NC}"
+send_request "POST" "stripe" "payment-events" '{
+  "id": "evt_123456789",
+  "type": "payment_intent.succeeded",
+  "object": "event",
+  "api_version": "2023-10-16",
+  "created": 1710936000,
   "data": {
     "object": {
-      "id": "ch_123456",
-      "amount": 1000,
-      "currency": "usd"
+      "id": "pi_123456789",
+      "amount": 9999,
+      "currency": "usd",
+      "customer": "cus_123456789",
+      "status": "succeeded"
+    }
+  },
+  "livemode": false,
+  "pending_webhooks": 0,
+  "request": null,
+  "type": "payment_intent.succeeded"
+}'
+
+# Centra Fulfillment
+echo -e "${BLUE}Testing Centra Fulfillment...${NC}"
+send_request "POST" "centra" "fulfilment/partner123" '{
+  "event": "fulfillment.created",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "orderId": "ORD-123456789",
+    "fulfillmentId": "FUL-123456789",
+    "status": "created",
+    "items": [
+      {
+        "orderItemId": "ITEM-123456789",
+        "sku": "PROD-123456789",
+        "quantity": 1,
+        "warehouse": "MAIN-WAREHOUSE"
+      }
+    ],
+    "shipping": {
+      "carrier": "DHL",
+      "trackingNumber": "1234567890",
+      "trackingUrl": "https://www.dhl.com/tracking/1234567890"
     }
   }
 }'
 
-# Test with GET method
-send_request "GET" "harper-magento-dev" "fulfilment/create" ''
+# Centra Refund
+echo -e "${BLUE}Testing Centra Refund...${NC}"
+send_request "POST" "centra" "refund/partner123" '{
+  "event": "refund.created",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "orderId": "ORD-123456789",
+    "refundId": "REF-123456789",
+    "status": "created",
+    "amount": 100.00,
+    "currency": "USD",
+    "reason": "Customer request",
+    "items": [
+      {
+        "orderItemId": "ITEM-123456789",
+        "quantity": 1,
+        "amount": 100.00
+      }
+    ]
+  }
+}'
+
+# Centra Order Cancellation
+echo -e "${BLUE}Testing Centra Order Cancellation...${NC}"
+send_request "POST" "centra" "cancel-order/partner123" '{
+  "event": "order.cancelled",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "orderId": "ORD-123456789",
+    "status": "cancelled",
+    "reason": "Customer request",
+    "cancelledAt": "2024-03-20T10:00:00Z"
+  }
+}'
+
+# 17Track Tracking Update
+echo -e "${BLUE}Testing 17Track Tracking Update...${NC}"
+send_request "POST" "17track" "tracking-updated" '{
+  "event": "tracking.updated",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "trackingNumber": "DHL123456789",
+    "status": "delivered",
+    "location": "New York, USA",
+    "timestamp": "2024-03-20T10:00:00Z",
+    "details": "Package delivered to recipient"
+  }
+}'
+
+# Rebound Return Request
+echo -e "${BLUE}Testing Rebound Return Request...${NC}"
+send_request "POST" "rebound" "return-request/partner123" '{
+  "event": "return.requested",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "returnId": "RET123",
+    "orderId": "ORD123",
+    "status": "pending",
+    "items": [
+      {
+        "orderItemId": "ITEM123",
+        "quantity": 1,
+        "reason": "Wrong size"
+      }
+    ],
+    "customer": {
+      "name": "John Doe",
+      "email": "john@example.com"
+    }
+  }
+}'
+
+# Rebound Return
+echo -e "${BLUE}Testing Rebound Return...${NC}"
+send_request "POST" "rebound" "return/partner123" '{
+  "event": "return.created",
+  "timestamp": "2024-03-20T10:00:00Z",
+  "data": {
+    "returnId": "RET123",
+    "orderId": "ORD123",
+    "status": "processing",
+    "items": [
+      {
+        "orderItemId": "ITEM123",
+        "quantity": 1,
+        "condition": "unworn"
+      }
+    ],
+    "shipping": {
+      "carrier": "UPS",
+      "trackingNumber": "UPS123456789"
+    }
+  }
+}'
 
 echo -e "${BLUE}=== Testing Complete ===${NC}"

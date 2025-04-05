@@ -25,12 +25,19 @@ const defaultTopic = process.env.DEFAULT_TOPIC || 'webhook-events';
 const kafkaConfig = {
   clientId: process.env.KAFKA_CLIENT_ID || 'webhook-service',
   brokers,
-  ssl: false,
+  ssl: {
+    rejectUnauthorized: false,
+    servername: brokers[0].split(':')[0],
+    minVersion: 'TLSv1.2' as const,
+    maxVersion: 'TLSv1.2' as const
+  },
   sasl: {
     mechanism: 'plain' as const,
     username,
     password,
   },
+  connectionTimeout: 3000,
+  authenticationTimeout: 3000,
   retry: {
     initialRetryTime: 100,
     retries: 8
@@ -85,7 +92,124 @@ app.get('/', (req, res) => {
           topicName: 'The name of the Kafka topic (alphanumeric, underscores, hyphens, dots)',
           '*': 'Arbitrary path that will be included in the message'
         },
-        example: '/webhooks/github-events/repository/push'
+        examples: {
+          'Shopify Order Creation': {
+            path: '/webhooks/shopify/orders/create',
+            method: 'POST',
+            payload: {
+              "id": 123456789,
+              "email": "customer@example.com",
+              "created_at": "2024-03-20T10:00:00Z",
+              "total_price": "99.99",
+              "currency": "USD",
+              "line_items": [
+                {
+                  "title": "Product Name",
+                  "quantity": 1,
+                  "price": "99.99"
+                }
+              ]
+            }
+          },
+          'Stripe Payment Success': {
+            path: '/webhooks/stripe/events/payment_intent.succeeded',
+            method: 'POST',
+            payload: {
+              "id": "evt_123456789",
+              "type": "payment_intent.succeeded",
+              "created": 1710936000,
+              "data": {
+                "object": {
+                  "id": "pi_123456789",
+                  "amount": 9999,
+                  "currency": "usd",
+                  "customer": "cus_123456789",
+                  "status": "succeeded"
+                }
+              }
+            }
+          },
+          'Square Order Update': {
+            path: '/webhooks/square/orders/update',
+            method: 'POST',
+            payload: {
+              "merchant_id": "M123456789",
+              "type": "order.updated",
+              "event_id": "evt_123456789",
+              "created_at": "2024-03-20T10:00:00Z",
+              "data": {
+                "type": "order",
+                "id": "order_123456789",
+                "object": {
+                  "order": {
+                    "id": "order_123456789",
+                    "state": "COMPLETED",
+                    "total_money": {
+                      "amount": 9999,
+                      "currency": "USD"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          'Centra Fulfillment': {
+            path: '/webhooks/centra/fulfillment/created',
+            method: 'POST',
+            payload: {
+              "event": "fulfillment.created",
+              "timestamp": "2024-03-20T10:00:00Z",
+              "data": {
+                "orderId": "ORD-123456789",
+                "fulfillmentId": "FUL-123456789",
+                "status": "created",
+                "items": [
+                  {
+                    "orderItemId": "ITEM-123456789",
+                    "sku": "PROD-123456789",
+                    "quantity": 1,
+                    "warehouse": "MAIN-WAREHOUSE"
+                  }
+                ],
+                "shipping": {
+                  "carrier": "DHL",
+                  "trackingNumber": "1234567890",
+                  "trackingUrl": "https://www.dhl.com/tracking/1234567890"
+                }
+              }
+            }
+          },
+          'BigCommerce Fulfillment': {
+            path: '/webhooks/bigcommerce/orders/fulfillment',
+            method: 'POST',
+            payload: {
+              "scope": "store/order/fulfillment",
+              "store_id": 12345,
+              "producer": "stores/12345",
+              "hash": "abc123def456",
+              "created_at": 1710936000,
+              "data": {
+                "type": "order",
+                "id": 123456789,
+                "order_id": 123456789,
+                "status_id": 11,
+                "status": "Shipped",
+                "shipping_provider": "FedEx",
+                "tracking_number": "1234567890",
+                "tracking_carrier": "fedex",
+                "tracking_url": "https://www.fedex.com/tracking/1234567890",
+                "items": [
+                  {
+                    "order_product_id": 987654321,
+                    "product_id": 123456789,
+                    "sku": "PROD-123456789",
+                    "quantity": 1
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     }
   });
