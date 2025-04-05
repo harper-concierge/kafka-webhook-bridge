@@ -66,4 +66,4 @@ fi
 
 git push origin --follow-tags
 
-echo "New version has been released and tagged. CircleCI will handle the build and deployment."
+echo "New version has been released and tagged. CircleCI will handle the build and upload to ECR. You need to deploy manually"
