@@ -17,20 +17,21 @@ const logger = winston.createLogger({
 
 // Environment variables
 const brokers = process.env.KAFKA_BROKERS?.split(',') ?? ['kafka:9094'];
-const username = process.env.KAFKA_USERNAME ?? process.env.KAFKA_BROKER_USERNAME ?? 'webhook';
-const password = process.env.KAFKA_PASSWORD ?? process.env.KAFKA_BROKER_PASSWORD ?? 'webhook';
+const username = process.env.KAFKA_BROKER_USERNAME ?? 'webhook';
+const password = process.env.KAFKA_BROKER_PASSWORD ?? 'webhook';
 const defaultTopic = process.env.DEFAULT_TOPIC || 'webhook-events';
 
 // Kafka configuration
 const kafkaConfig = {
   clientId: process.env.KAFKA_CLIENT_ID || 'webhook-service',
   brokers,
-  ssl: {
-    rejectUnauthorized: false,
-    servername: brokers[0].split(':')[0],
-    minVersion: 'TLSv1.2' as const,
-    maxVersion: 'TLSv1.2' as const
-  },
+  ssl: false,
+  // ssl: {
+  //   rejectUnauthorized: false,
+  //   servername: brokers[0].split(':')[0],
+  //   minVersion: 'TLSv1.2' as const,
+  //   maxVersion: 'TLSv1.2' as const
+  // },
   sasl: {
     mechanism: 'plain' as const,
     username,
@@ -59,12 +60,12 @@ const producer = kafka.producer();
 // Handle graceful shutdown
 const shutdown = async (signal: string) => {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
-  
+
   try {
     // Disconnect producer
     await producer.disconnect();
     logger.info('Kafka producer disconnected');
-    
+
     // Close server
     server.close(() => {
       logger.info('HTTP server closed');
