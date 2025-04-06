@@ -466,7 +466,7 @@ Resources:
       VpcId: !Ref VPC
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /health
+      HealthCheckPath: /health/ready
       HealthCheckPort: 3000
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
@@ -822,6 +822,14 @@ Resources:
               awslogs-group: !Ref CloudWatchLogsGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: webhook
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:3000/health
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
 
   WebhookService:
     Type: AWS::ECS::Service

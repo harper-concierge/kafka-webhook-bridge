@@ -90,10 +90,39 @@ const basicAuth = expressBasicAuth({
   challenge: true
 });
 
-// Health check endpoint
+// Simple health check for local task health
 app.get('/health', (req, res) => {
-	console.log('/health - requested');
   res.json({ status: 'ok' });
+});
+
+// Enhanced health check for target group
+app.get('/health/ready', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    checks: {
+      http: 'ok',
+      kafka: 'ok'
+    }
+  };
+
+  try {
+    // Check Kafka connection
+    const admin = kafka.admin();
+    await admin.connect();
+    await admin.disconnect();
+  } catch (error) {
+    health.status = 'error';
+    health.checks.kafka = 'error';
+    logger.error('Health check failed: Kafka connection error', { error });
+  }
+
+  // If any check failed, return 503
+  if (health.status === 'error') {
+    return res.status(503).json(health);
+  }
+
+  res.json(health);
 });
 
 // Documentation endpoint
@@ -107,6 +136,11 @@ app.get('/', (req, res) => {
       '/health': {
         methods: ['GET'],
         description: 'Health check endpoint',
+        authentication: 'None'
+      },
+      '/health/ready': {
+        methods: ['GET'],
+        description: 'Enhanced health check for target group',
         authentication: 'None'
       },
       '/webhooks/:topicName/*': {
