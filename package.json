@@ -1,6 +1,6 @@
 {
   "name": "kafka-webhook-bridge",
-  "version": "1.1.23",
+  "version": "1.1.24",
   "description": "Bridge between webhooks and Kafka",
   "main": "dist/index.js",
   "scripts": {
