@@ -60,12 +60,12 @@ const producer = kafka.producer();
 // Handle graceful shutdown
 const shutdown = async (signal: string) => {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
-
+  
   try {
     // Disconnect producer
     await producer.disconnect();
     logger.info('Kafka producer disconnected');
-
+    
     // Close server
     server.close(() => {
       logger.info('HTTP server closed');
@@ -80,6 +80,18 @@ const shutdown = async (signal: string) => {
 // Set up signal handlers
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Prevent process from hanging on unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+// Prevent process from hanging on uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 const app = express();
 app.use(express.json());
