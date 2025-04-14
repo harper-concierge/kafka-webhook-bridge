@@ -60,12 +60,12 @@ const producer = kafka.producer();
 // Handle graceful shutdown
 const shutdown = async (signal: string) => {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
-  
+
   try {
     // Disconnect producer
     await producer.disconnect();
     logger.info('Kafka producer disconnected');
-    
+
     // Close server
     server.close(() => {
       logger.info('HTTP server closed');
@@ -310,7 +310,7 @@ function validateTopicName(topicName: string): { valid: boolean; sanitized?: str
 }
 
 // Dynamic topic webhook endpoint
-app.all('/webhooks/:topicName/*', basicAuth, async (req, res) => {
+app.all('/:topicName/*', basicAuth, async (req, res) => {
 	console.log(req.path, 'Requested');
   try {
     const topicNameRaw = req.params.topicName;
