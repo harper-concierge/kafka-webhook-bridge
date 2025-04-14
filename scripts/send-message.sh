@@ -2,7 +2,7 @@
 # Script to test the webhook service with various e-commerce platform webhooks
 
 # Configuration
-HOST=${WEBHOOK_HOST:-"localhost:3000"}
+HOST=${WEBHOOK_DOMAIN:-"localhost:3000"}
 USERNAME=${WEBHOOK_USERNAME:-"admin"}
 PASSWORD=${WEBHOOK_PASSWORD:-"admin-secret"}
 PROTOCOL="https"
