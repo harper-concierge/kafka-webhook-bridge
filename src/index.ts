@@ -331,7 +331,7 @@ app.all('/:topicName/*', basicAuth, async (req, res) => {
       method: req.method,
       headers: req.headers,
       path: webhookPath,
-      query: req.query,
+      query: req.originalUrl.split('?')[1] || '', // Extracts the query string,
       timestamp: new Date().toISOString()
     };
 

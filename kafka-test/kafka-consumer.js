@@ -3,14 +3,14 @@ const chalk = require('chalk');
 
 // Get topics from environment or use default list
 const topics = (process.env.KAFKA_TOPICS || 'shopify,stripe,centra,bigcommerce').split(',');
-const kafkaBrokerUrl = process.env.KAFKA_BROKER_URL || 'kafka.harperconcierge.dev:29095';
+const kafkaBrokerUrl = process.env.KAFKA_BROKER_URL || 'kafka.harperconcierge.dev';
 const kafkaUsername = process.env.KAFKA_BROKER_USERNAME || 'webhook';
 const kafkaPassword = process.env.KAFKA_BROKER_PASSWORD || 'webhook';
 
-console.log(chalk.blue(`Attempting to connect to Kafka at ${kafkaBroker}:${kafkaPort}`));
+const [servername, kafkaPort] = kafkaBrokerUrl.split(':');
+console.log(chalk.blue(`Attempting to connect to Kafka at ${kafkaBrokerUrl}:${kafkaPort}`));
 console.log(chalk.blue(`Will subscribe to topics: ${topics.join(', ')}`));
 console.log(chalk.blue(`Using username: ${kafkaUsername}`));
-const servername = kafkaBrokerUrl.split(':')[0];
 
 // Create the kafka instance
 const kafka = new Kafka({
@@ -145,11 +145,11 @@ async function consumeMessages() {
     });
   } catch (error) {
     console.error(chalk.red('Error:'), error);
-    if (error.name === 'KafkaJSSASLAuthenticationError') {
+    if (error.name === 'KafkaJSSLAuthenticationError') {
       console.error(chalk.red('Authentication failed. Please check your credentials:'));
       console.error(chalk.yellow('Username:'), kafkaUsername);
       console.error(chalk.yellow('Password:'), kafkaPassword ? '[hidden]' : 'not set');
-      console.error(chalk.yellow('Broker:'), `${kafkaBroker}:${kafkaPort}`);
+      console.error(chalk.yellow('Broker:'), `${kafkaBrokerUrl}:${kafkaPort}`);
     }
     process.exit(1);
   }
