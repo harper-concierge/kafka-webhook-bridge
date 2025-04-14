@@ -323,8 +323,8 @@ app.all('/:topicName/*', basicAuth, async (req, res) => {
 
     const topicName = validation.sanitized;
 
-    // Get the remaining path after /webhooks/topicName/
-    const webhookPath = req.url.substring(`/webhooks/${topicNameRaw}/`.length);
+    // Get the remaining path after /topicName/
+    const webhookPath = req.url.substring(`/${topicNameRaw}/`.length);
 
     // Create message with body if applicable
     const message: any = {
